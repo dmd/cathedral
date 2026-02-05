@@ -154,7 +154,7 @@ movie '/Users/dmd/Documents/backups/dreamhost/edges/3e.org/cathedral/cathedral.s
       _root.turnsound = new Sound();
       _root.turnsound.attachSound('turnsound');
       socket = new XMLSocket();
-      socket.connect('3e.org', '9604');
+      socket.connect('eco.3e.org', '9604');
       socket.onXML = doOnXML;
       socket.onConnect = myOnConnect;
       _root.target = _root.target.toUpperCase();

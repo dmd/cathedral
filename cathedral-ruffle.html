@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cathedral (Ruffle)</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+    }
+    #player { width: 780px; height: 500px; }
+  </style>
+  <script>
+    var proxyScheme = (location.protocol === "https:") ? "wss://" : "ws://";
+    var proxyUrl = proxyScheme + location.host + "/ws";
+    window.RufflePlayer = window.RufflePlayer || {};
+    window.RufflePlayer.config = {
+      socketProxy: [
+        {
+          host: "eco.3e.org",
+          port: 9604,
+          proxyUrl: proxyUrl
+        }
+      ]
+    };
+  </script>
+  <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+</head>
+<body>
+  <div id="player"></div>
+  <script>
+    const ruffle = window.RufflePlayer.newest();
+    const player = ruffle.createPlayer();
+    player.style.width = "100%";
+    player.style.height = "100%";
+    document.getElementById("player").appendChild(player);
+    player.load("cathedral.swf");
+  </script>
+</body>
+</html>

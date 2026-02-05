@@ -1,0 +1,19 @@
+services:
+  xmlsocket:
+    image: python:3.12-slim
+    command: ["python", "/app/xmlsocket_server.py", "--host", "0.0.0.0", "--port", "9604", "--policy-domain", "*", "--policy-ports", "9604"]
+    volumes:
+      - ./xmlsocket_server.py:/app/xmlsocket_server.py:ro
+    restart: unless-stopped
+    # Expose if you want direct TCP access (e.g., Ruffle Desktop).
+    # ports:
+    #   - "9604:9604"
+
+  websockify:
+    image: python:3.12-slim
+    command: ["sh", "-c", "pip install --no-cache-dir websockify==0.11.0 && websockify 0.0.0.0:8181 xmlsocket:9604"]
+    depends_on:
+      - xmlsocket
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8181:8181"
