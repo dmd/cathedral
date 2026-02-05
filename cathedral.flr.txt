@@ -1,0 +1,179 @@
+movie '/Users/dmd/Documents/backups/dreamhost/edges/3e.org/cathedral/cathedral.swf' {
+// flash 5, total frames: 2, frame rate: 12 fps, 780x500 px
+
+  frame 1 {
+    stop();
+  }
+
+  button 15 {
+
+    on (release) {
+      gotoAndStop(2);
+    }
+  }
+
+  frame 2 {
+    stop();
+  }
+
+  instance actions of movieClip 47  {
+
+    onClipEvent (enterFrame) {
+      ++alivedelay;
+      if (40 < alivedelay) {
+        alivedelay = 0;
+        requestXML = new XML();
+        request = requestXML.createElement('ALIVE');
+        request.attributes.target = _root.target;
+        request.attributes.origin = _root.origin;
+        requestXML.appendChild(request);
+        socket.send(requestXML);
+      }
+      --_root.timetolive;
+      if (_root.timetolive < 0) {
+        _root.failnotice._alpha = 100;
+        _root.opstatus = 'no opponent connected';
+      } else {
+        _root.failnotice._alpha = 0;
+        _root.opstatus = _root.origin + ' connected to ' + _root.target;
+      }
+    }
+
+    onClipEvent (mouseDown) {
+      mx = _root._xmouse;
+      my = _root._ymouse;
+      i = 0;
+      while (i < 30) {
+        piece = _root['p' + i];
+        if (piece.hitTest(mx, my)) {
+          piece.startDrag();
+          dragging = 1;
+          movingpiece = i;
+          i = 30;
+          break;
+        }
+        ++i;
+      }
+    }
+
+    onClipEvent (mouseUp) {
+      mx = _root._xmouse;
+      my = _root._ymouse;
+      if (_root.endturn.hitTest(mx, my)) {
+        _root.endturn._alpha = 5;
+        requestXML = new XML();
+        request = requestXML.createElement('YOURTURN');
+        request.attributes.target = _root.target;
+        request.attributes.origin = _root.origin;
+        requestXML.appendChild(request);
+        socket.send(requestXML);
+      }
+      if (_root.reset.hitTest(mx, my)) {
+        numChildren = _root.resetinfo.firstChild.childNodes.length;
+        b = _root.resetinfo.firstChild.firstChild;
+        i = 0;
+        while (i < numChildren) {
+          b.attributes.target = _root.target;
+          b.attributes.origin = _root.origin;
+          socket.send(b);
+          b.attributes.origin = _root.target;
+          b.attributes.target = _root.origin;
+          trace('node: ' + b.toString());
+          socket.send(b);
+          b = b.nextSibling;
+          ++i;
+        }
+      }
+      if (dragging) {
+        stopDrag();
+        piece._x = Math.round(piece._x / 25) * 25;
+        piece._y = Math.round(piece._y / 25) * 25;
+        dragging = 0;
+        sendMove(movingpiece, _root['p' + movingpiece]._x, _root['p' + movingpiece]._y, _root['p' + movingpiece]._rotation);
+      }
+    }
+
+    onClipEvent (keyUp) {
+      if (Key.getCode() == KEY.Space) {
+        piece._rotation += 90;
+        sendMove(movingpiece, _root['p' + movingpiece]._x, _root['p' + movingpiece]._y, _root['p' + movingpiece]._rotation);
+      }
+    }
+
+    onClipEvent (mouseMove) {
+      ++mousedelay;
+      if (16 < mousedelay and dragging) {
+        mousedelay = 0;
+        sendMove(movingpiece, _root['p' + movingpiece]._x, _root['p' + movingpiece]._y, _root['p' + movingpiece]._rotation);
+      }
+    }
+
+    onClipEvent (load) {
+      function myOnConnect(success) {
+        if (success) {
+          _root.failnotice._alpha = 0;
+        } else {
+          _root.failnotice._alpha = 100;
+        }
+      }
+
+      function sendMove(id, x, y, rot) {
+        movementXML = new XML();
+        motion = movementXML.createElement('MOTION');
+        motion.attributes.id = id;
+        motion.attributes.x = Math.round(x);
+        motion.attributes.y = Math.round(y);
+        motion.attributes.rot = Math.round(rot);
+        motion.attributes.target = _root.target;
+        motion.attributes.origin = _root.origin;
+        movementXML.appendChild(motion);
+        socket.send(movementXML);
+      }
+
+      function doOnXML(r) {
+        m = r.firstChild;
+        if (m.attributes.target == _root.origin and m.attributes.origin == _root.target) {
+          if (m.nodeName == 'MOTION') {
+            piecetomove = m.attributes.id;
+            _root['p' + piecetomove]._x = m.attributes.x;
+            _root['p' + piecetomove]._y = m.attributes.y;
+            _root['p' + piecetomove]._rotation = m.attributes.rot;
+          } else {
+            if (m.nodeName == 'YOURTURN') {
+              _root.endturn._alpha = 100;
+              _root.turnsound.start();
+            } else {
+              if (m.nodename == 'ALIVE') {
+                _root.timetolive = 120;
+              }
+            }
+          }
+        }
+      }
+
+      _root.turnsound = new Sound();
+      _root.turnsound.attachSound('turnsound');
+      socket = new XMLSocket();
+      socket.connect('3e.org', '9604');
+      socket.onXML = doOnXML;
+      socket.onConnect = myOnConnect;
+      _root.target = _root.target.toUpperCase();
+      _root.origin = _root.origin.toUpperCase();
+      originalBoardXML = new XML();
+      originalBoard = originalBoardXML.createElement('BOARD');
+      originalBoardXML.appendChild(originalBoard);
+      i = 0;
+      while (i < 30) {
+        motion = originalBoardXML.createElement('MOTION');
+        motion.attributes.id = i;
+        motion.attributes.x = Math.round(_root['p' + i]._x);
+        motion.attributes.y = Math.round(_root['p' + i]._y);
+        motion.attributes.rot = Math.round(_root['p' + i]._rotation);
+        originalBoard.appendChild(motion);
+        ++i;
+      }
+      _root.resetinfo = originalBoardXML;
+    }
+  }
+
+}
