@@ -1,6 +1,6 @@
 # Cathedral (Ruffle Multiplayer)
 
-This repository contains the original SWF and a small backend server that lets multiple clients share game state. The SWF uses `XMLSocket` and is hardcoded to connect to `eco.3e.org:9604`.
+This repository contains the original SWF (in `site/`) and a small backend server that lets multiple clients share game state. The SWF uses `XMLSocket` and is hardcoded to connect to `eco.3e.org:9604`.
 
 ## 1) Run the XMLSocket broadcast server
 
@@ -19,7 +19,7 @@ If you are testing locally and don't control `eco.3e.org`, you can point `eco.3e
 ## 2) Ruffle: desktop vs web
 
 ### Ruffle Desktop
-Ruffle Desktop can open raw TCP sockets directly. If your server is reachable at `eco.3e.org:9604`, you can just open `cathedral.swf` in Ruffle Desktop.
+Ruffle Desktop can open raw TCP sockets directly. If your server is reachable at `eco.3e.org:9604`, you can just open `site/cathedral.swf` in Ruffle Desktop.
 
 ### Ruffle Web (browser)
 Browsers cannot open raw TCP sockets, so Ruffle Web must proxy XMLSocket traffic through WebSockets.
@@ -31,9 +31,9 @@ Browsers cannot open raw TCP sockets, so Ruffle Web must proxy XMLSocket traffic
 websockify 8181 eco.3e.org:9604
 ```
 
-3. Open `cathedral-ruffle.html` (configured to map `eco.3e.org:9604` to `ws(s)://<host>/ws`).
+3. Open `site/index.html` (configured to map `eco.3e.org:9604` to `ws(s)://<host>/ws`).
 
-If your proxy or server is elsewhere, update the `socketProxy` block in `cathedral-ruffle.html`.
+If your proxy or server is elsewhere, update the `socketProxy` block in `site/index.html`.
 
 ## 3) Docker + Caddy (public web hosting)
 This repo includes a minimal `docker-compose.yml` and `Caddyfile` to serve the game and proxy XMLSocket traffic.
