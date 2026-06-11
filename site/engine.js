@@ -256,13 +256,36 @@ const ENGINE = (() => {
 
   // ---------- computer opponent ----------
 
-  function countUsable(s, player) {
+  // Space the player can actually use: empty cells not in enemy territory,
+  // counted only within 4-connected regions large enough to fit one of the
+  // player's remaining buildings. Fragmented slivers don't count.
+  function usableSpace(s, player) {
     const opp = other(player);
-    let n = 0;
-    for (let k = 0; k < N * N; k++) {
-      if (s.grid[k] === -1 && s.terr[k] !== opp) n++;
+    let minSize = Infinity;
+    for (const id of s.hand) {
+      if (id !== 0 && ownerOf(id) === player) minSize = Math.min(minSize, sizeOf(id));
     }
-    return n;
+    if (minSize === Infinity) return 0;
+    const open = k => s.grid[k] === -1 && s.terr[k] !== opp;
+    const seen = new Array(N * N).fill(false);
+    let total = 0;
+    for (let start = 0; start < N * N; start++) {
+      if (seen[start] || !open(start)) continue;
+      const stack = [start];
+      seen[start] = true;
+      let size = 0;
+      while (stack.length) {
+        const k = stack.pop();
+        size++;
+        const c = k % N, r = (k - c) / N;
+        if (c + 1 < N && !seen[k + 1] && open(k + 1)) { seen[k + 1] = true; stack.push(k + 1); }
+        if (c - 1 >= 0 && !seen[k - 1] && open(k - 1)) { seen[k - 1] = true; stack.push(k - 1); }
+        if (r + 1 < N && !seen[k + N] && open(k + N)) { seen[k + N] = true; stack.push(k + N); }
+        if (r - 1 >= 0 && !seen[k - N] && open(k - N)) { seen[k - N] = true; stack.push(k - N); }
+      }
+      if (size >= minSize) total += size;
+    }
+    return total;
   }
 
   function capturedSquares(ev) {
@@ -273,49 +296,77 @@ const ENGINE = (() => {
     return n;
   }
 
-  // Static value of a candidate move for `me`, after simulating it on a clone.
-  function staticEval(s, me, move) {
-    const sim = cloneState(s);
-    const ev = place(sim, move.id, move.rot, move.col, move.row);
-    const opp = other(me);
-    let v = 0;
-    v += 3.0 * sizeOf(move.id);                       // big buildings first
-    v += 8.0 * ev.claimedCells.length;                // claimed territory
-    v += 7.0 * capturedSquares(ev);                   // enemy building removed
-    if (ev.cathedralCaptured) v += 25;
-    v += 1.2 * (countUsable(sim, me) - countUsable(sim, opp));
-    // don't build inside your own territory while open space remains
-    let ownTerr = 0, openLeft = 0;
-    for (const [i, j] of cellsFor(move.id, move.rot)) {
-      if (s.terr[(move.row + j) * N + (move.col + i)] === me) ownTerr++;
-    }
-    for (let k = 0; k < N * N; k++) {
-      if (s.grid[k] === -1 && s.terr[k] === 0) openLeft++;
-    }
-    if (openLeft > 8) v -= 2.0 * ownTerr;
-    // mild centrality preference early in the game
-    if (Object.keys(s.placed).length < 6) {
-      for (const [i, j] of cellsFor(move.id, move.rot)) {
-        v += 0.15 * (4.5 - Math.abs(move.col + i - 4.5)) +
-             0.15 * (4.5 - Math.abs(move.row + j - 4.5));
-      }
-    }
-    return { v, sim };
+  // Tactical value of a just-played move (used for move ordering).
+  function moveGain(ev, id) {
+    let g = 3.0 * sizeOf(id) + 8.0 * ev.claimedCells.length + 7.0 * capturedSquares(ev);
+    if (ev.cathedralCaptured) g += 25;
+    return g;
   }
 
-  // Best reply value the opponent could get on the given board.
-  function bestReplyGain(sim, opp) {
-    const me = other(opp);
-    let best = -Infinity;
-    for (const m of legalMoves(sim, opp)) {
-      const s2 = cloneState(sim);
-      const ev = place(s2, m.id, m.rot, m.col, m.row);
-      let g = 3.0 * sizeOf(m.id) + 8.0 * ev.claimedCells.length + 7.0 * capturedSquares(ev);
-      if (ev.cathedralCaptured) g += 25;
-      g += 1.2 * (countUsable(s2, opp) - countUsable(s2, me));
-      if (g > best) best = g;
+  // Positional evaluation of a board from `me`'s point of view.
+  function posEval(s, me) {
+    const opp = other(me);
+    let terrMe = 0, terrOpp = 0;
+    for (let k = 0; k < N * N; k++) {
+      if (s.terr[k] === me) terrMe++;
+      else if (s.terr[k] === opp) terrOpp++;
     }
-    return best === -Infinity ? 0 : best;
+    const sc = score(s);
+    return 8.0 * (terrMe - terrOpp) +
+           3.0 * (sc[opp] - sc[me]) +
+           1.5 * (usableSpace(s, me) - usableSpace(s, opp));
+  }
+
+  // ---------- alpha-beta search ----------
+
+  const BEAM = { 3: 12, 2: 10, 1: 8 };
+  const ROOT_BEAM = 18;
+
+  // At the deepest level only consider the player's two largest remaining
+  // building sizes — keeps the leaf fan-out affordable.
+  function restrictToBigShapes(s, player, moves) {
+    const sizes = [...new Set(moves.map(m => sizeOf(m.id)))].sort((a, b) => b - a);
+    if (sizes.length <= 2) return moves;
+    const cutoff = sizes[1];
+    return moves.filter(m => sizeOf(m.id) >= cutoff);
+  }
+
+  function search(s, depth, me, alpha, beta, deadline) {
+    if (s.phase === 'over') {
+      const sc = score(s);
+      return 1000 * (sc[other(me)] - sc[me]);
+    }
+    if (depth === 0 || Date.now() > deadline) return posEval(s, me);
+    const player = s.turn;
+    let moves = legalMoves(s, player);
+    if (depth === 1) moves = restrictToBigShapes(s, player, moves);
+    if (!moves.length) {
+      const s2 = cloneState(s);
+      pass(s2);
+      return search(s2, depth - 1, me, alpha, beta, deadline);
+    }
+    const kids = moves.map(m => {
+      const s2 = cloneState(s);
+      const ev = place(s2, m.id, m.rot, m.col, m.row);
+      const key = moveGain(ev, m.id) +
+                  1.5 * (usableSpace(s2, player) - usableSpace(s2, other(player)));
+      return { s2, key };
+    });
+    kids.sort((a, b) => b.key - a.key);
+    const maximizing = player === me;
+    let best = maximizing ? -Infinity : Infinity;
+    for (const kid of kids.slice(0, BEAM[depth] || 8)) {
+      const v = search(kid.s2, depth - 1, me, alpha, beta, deadline);
+      if (maximizing) {
+        if (v > best) best = v;
+        if (best > alpha) alpha = best;
+      } else {
+        if (v < best) best = v;
+        if (best < beta) beta = best;
+      }
+      if (beta <= alpha) break;
+    }
+    return best;
   }
 
   function chooseCathedral(s, rng) {
@@ -336,23 +387,39 @@ const ENGINE = (() => {
     return best;
   }
 
-  function chooseMove(s, me, rng) {
+  function chooseMove(s, me, rng, timeBudgetMs) {
     rng = rng || Math.random;
     if (s.phase === 'cathedral') return chooseCathedral(s, rng);
     const moves = legalMoves(s, me);
     if (!moves.length) return null;
-    const scored = moves.map(m => ({ m, ...staticEval(s, me, m) }));
-    scored.sort((a, b) => b.v - a.v);
-    const K = Math.min(12, scored.length);
-    const opp = other(me);
-    let best = null, bestV = -Infinity;
-    for (let i = 0; i < K; i++) {
-      const { m, v, sim } = scored[i];
-      const total = v - 0.85 * bestReplyGain(sim, opp) + rng() * 0.4;
-      if (total > bestV) {
-        bestV = total;
-        best = m;
+    const deadline = Date.now() + (timeBudgetMs || 2000);
+    // order root children by tactical gain + positional delta
+    const kids = moves.map(m => {
+      const s2 = cloneState(s);
+      const ev = place(s2, m.id, m.rot, m.col, m.row);
+      const key = moveGain(ev, m.id) +
+                  1.5 * (usableSpace(s2, me) - usableSpace(s2, other(me)));
+      return { m, s2, key };
+    });
+    kids.sort((a, b) => b.key - a.key);
+    const rootPass = depth => {
+      let best = null, bestV = -Infinity, alpha = -Infinity;
+      for (const kid of kids.slice(0, ROOT_BEAM)) {
+        const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * 0.3;
+        if (v > bestV) {
+          bestV = v;
+          best = kid.m;
+        }
+        if (v > alpha) alpha = v;
+        if (Date.now() > deadline) break;
       }
+      return best;
+    };
+    const t0 = Date.now();
+    let best = rootPass(2);                       // 3 half-moves + eval
+    // plenty of time left? deepen to 4 half-moves
+    if (Date.now() - t0 < (deadline - Date.now()) / 2 && moves.length < 400) {
+      best = rootPass(3) || best;
     }
     return best;
   }

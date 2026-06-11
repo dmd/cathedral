@@ -137,6 +137,9 @@ html, body {
   border-radius: 50%;
   background: #333333;
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 #aibtn:hover .dot, #aibtn:focus-visible .dot { background: #ff9900; }
 #aibtn .lbl {
