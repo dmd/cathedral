@@ -347,19 +347,60 @@ const ENGINE = (() => {
     return diff;
   }
 
+  // Squares of remaining buildings that no longer fit anywhere — as good as
+  // lost for the final score.
+  function deadSquares(s, player) {
+    let dead = 0;
+    const seenShapes = new Set();
+    for (const id of s.hand) {
+      if (id === 0 || ownerOf(id) !== player) continue;
+      const shape = PIECES[id].shape;
+      if (seenShapes.has(shape)) continue;
+      seenShapes.add(shape);
+      let fits = false;
+      outer:
+      for (const rot of distinctRots[id]) {
+        for (let col = 0; col < N && !fits; col++) {
+          for (let row = 0; row < N; row++) {
+            if (canPlace(s, player, id, rot, col, row)) {
+              fits = true;
+              break outer;
+            }
+          }
+        }
+      }
+      if (!fits) {
+        // count every remaining copy of this shape
+        for (const id2 of s.hand) {
+          if (id2 !== 0 && ownerOf(id2) === player && PIECES[id2].shape === shape) {
+            dead += sizeOf(id2);
+          }
+        }
+      }
+    }
+    return dead;
+  }
+
   // Positional evaluation of a board from `me`'s point of view.
   function posEval(s, me) {
     const opp = other(me);
-    let terrMe = 0, terrOpp = 0;
+    let terrMe = 0, terrOpp = 0, empty = 0;
     for (let k = 0; k < N * N; k++) {
       if (s.terr[k] === me) terrMe++;
       else if (s.terr[k] === opp) terrOpp++;
+      if (s.grid[k] === -1) empty++;
     }
     const sc = score(s);
-    return 8.0 * (terrMe - terrOpp) +
-           3.0 * (sc[opp] - sc[me]) +
-           1.5 * (usableSpace(s, me) - usableSpace(s, opp)) +
-           1.2 * influence(s, me);
+    let v = 8.0 * (terrMe - terrOpp) +
+            3.0 * (sc[opp] - sc[me]) +
+            1.5 * (usableSpace(s, me) - usableSpace(s, opp)) +
+            1.2 * influence(s, me);
+    // late game is a packing contest: buildings that can no longer fit
+    // anywhere are lost points
+    if (empty <= 45) {
+      v += 3.0 * (deadSquares(s, opp) - deadSquares(s, me));
+    }
+    return v;
   }
 
   // ---------- alpha-beta search ----------
@@ -389,7 +430,8 @@ const ENGINE = (() => {
     }
     const player = s.turn;
     let moves = legalMoves(s, player);
-    if (depth === 1) moves = restrictToBigShapes(s, player, moves);
+    const narrow = moves.length < 60;     // endgame: every fitting move matters
+    if (depth === 1 && !narrow) moves = restrictToBigShapes(s, player, moves);
     if (!moves.length) {
       const s2 = cloneState(s);
       pass(s2);
@@ -406,7 +448,8 @@ const ENGINE = (() => {
     kids.sort((a, b) => b.key - a.key);
     const maximizing = player === me;
     let best = maximizing ? -Infinity : Infinity;
-    for (const kid of kids.slice(0, BEAM[depth] || 12)) {
+    const beamW = narrow ? kids.length : (BEAM[depth] || 12);
+    for (const kid of kids.slice(0, beamW)) {
       const v = search(kid.s2, depth - 1, me, alpha, beta, deadline);
       if (maximizing) {
         if (v > best) best = v;
@@ -459,13 +502,14 @@ const ENGINE = (() => {
     // passes are trusted (a truncated deep pass returns junk bounds).
     let best = kids[0].m;
     let lastPassMs = 0;
-    for (let depth = 2; depth <= 10; depth++) {
+    const rootWidth = moves.length < 80 ? kids.length : ROOT_BEAM;
+    for (let depth = 2; depth <= 30; depth++) {
       const remaining = deadline - Date.now();
       if (remaining < lastPassMs * 1.2 + 50) break;   // try deeper; truncation is harmless
       const t0 = Date.now();
       searchTimedOut = false;
       let passBest = null, passBestV = -Infinity, alpha = -Infinity;
-      for (const kid of kids.slice(0, ROOT_BEAM)) {
+      for (const kid of kids.slice(0, rootWidth)) {
         const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * 0.3;
         kid.v = v;
         if (v > passBestV) {
