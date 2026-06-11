@@ -524,6 +524,8 @@ function startAIGame() {
   enterGameScreen();
   endturnBtn.style.display = 'none';
   failnotice.style.display = 'none';
+  document.getElementById('youlabel').hidden = false;
+  document.getElementById('complabel').hidden = false;
   newAIGame();
 }
 

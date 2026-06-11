@@ -204,6 +204,17 @@ html, body {
   pointer-events: none;
 }
 
+.sidelabel {
+  position: absolute;
+  top: 5px;
+  width: 240px;
+  text-align: center;
+  font: bold 12px Arial, sans-serif;
+  pointer-events: none;
+}
+#youlabel  { left: 0;     color: #006600; }
+#complabel { left: 540px; color: #990000; }
+
 #failnotice {
   position: absolute;
   left: 0;
