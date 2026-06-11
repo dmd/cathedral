@@ -363,7 +363,7 @@ function msg(text) {
 
 function updateAIScore() {
   const sc = ENGINE.score(ai);
-  opstatus.textContent =
+  document.getElementById('netscore').textContent =
     `you: ${sc[HUMAN]} · computer: ${sc[COMP]} squares unplaced`;
 }
 
@@ -387,14 +387,14 @@ function applyEvents(eng, ev, mineColor, mineName, theirsName) {
     const p = state[id];
     if (id === 0) {
       p.el.classList.add('gone');
-      notes.push('the cathedral is captured and removed from the game');
+      notes.push('the cathedral is captured — gone for good');
     } else {
       const orig = resetPositions.find(r => r.id === id);
       p.x = orig.x;
       p.y = orig.y;
       p.rot = orig.rot;
       glidePiece(p);
-      notes.push(`${ENGINE.ownerOf(id) === mineColor ? mineName : theirsName} ${pieceName(id)} is captured and returned`);
+      notes.push(`${ENGINE.ownerOf(id) === mineColor ? mineName : theirsName} ${pieceName(id)} was captured`);
     }
   }
   renderTerritory(eng);
@@ -448,7 +448,7 @@ function rulesDrop(p, eng) {
   positionPiece(p);
   if (isNet) sendMove(p.id);
   updateEndTurn();
-  msg('press end turn to confirm — or move, rotate, or take the piece back');
+  msg('press end turn to confirm — or move, rotate, or take back');
 }
 
 function commitPending() {
@@ -487,6 +487,7 @@ function commitPending() {
 function updateEndTurn() {
   if (mode === 'ai' || rulesActive) {
     endturnBtn.style.display = '';
+    endturnBtn.classList.add('confirm');
     endturnBtn.classList.remove('dim');
     endturnBtn.classList.toggle('disabled', !pending);
   }
@@ -517,7 +518,7 @@ function proceed(prefix) {
     setTimeout(proceed, 900);
     return;
   }
-  msg(pre + 'your turn — place a building');
+  msg(pre + (prefix ? 'your turn' : 'your turn — place a building'));
   turnsound.play().catch(() => {});
 }
 
@@ -556,9 +557,7 @@ function endAIGame() {
   if (sc[HUMAN] < sc[COMP]) result = 'you win!';
   else if (sc[HUMAN] > sc[COMP]) result = 'the computer wins.';
   else result = "it's a draw.";
-  msg(`game over — ${result} ` +
-      `(you: ${sc[HUMAN]}, computer: ${sc[COMP]} squares unplaced) — ` +
-      `press reset for a new game`);
+  msg(`game over — ${result} press reset for a new game`);
   refreshLocks();
 }
 
@@ -648,9 +647,7 @@ function netProceed(prefix) {
     if (sc[myColor] < sc[netOther()]) result = 'you win!';
     else if (sc[myColor] > sc[netOther()]) result = `${target} wins.`;
     else result = "it's a draw.";
-    parts.push(`game over — ${result} ` +
-               `(you: ${sc[myColor]}, ${target}: ${sc[netOther()]} squares unplaced) — ` +
-               `press reset for a new game`);
+    parts.push(`game over — ${result} press reset for a new game`);
     msg(parts.join('; '));
     return;
   }
@@ -659,7 +656,7 @@ function netProceed(prefix) {
       ? 'place the cathedral anywhere on the board'
       : `waiting for ${target} to place the cathedral…`);
   } else if (net.turn === myColor) {
-    parts.push('your turn — place a building');
+    parts.push(parts.length ? 'your turn' : 'your turn — place a building');
     turnsound.play().catch(() => {});
   } else {
     parts.push(`waiting for ${target}…`);

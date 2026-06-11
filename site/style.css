@@ -207,12 +207,13 @@ html, body {
 #gamemsg {
   position: absolute;
   left: 0;
-  right: 0;
-  top: 102px;
+  width: 540px;
+  top: 483px;
   text-align: center;
-  font: bold 13px Arial, sans-serif;
+  font: bold 12px Arial, sans-serif;
   color: #191970;
   pointer-events: none;
+  white-space: nowrap;
 }
 
 .sidelabel {
@@ -253,7 +254,14 @@ html, body {
   border-radius: 50%;
   background: #333333;
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font: bold 13px Arial, sans-serif;
 }
+#resetbtn .dot { font-size: 15px; }
+#endturn.confirm:not(.disabled) .dot { background: #ff9900; }
 #endturn:hover .dot, #resetbtn:hover .dot { background: #ff9900; }
 #endturn:active .dot, #resetbtn:active .dot { background: #ff9900; }
 
@@ -281,9 +289,9 @@ html, body {
 
 #netscore {
   position: absolute;
-  left: 250px;
-  top: 483px;
-  width: 280px;
+  left: 0;
+  right: 0;
+  top: 105px;
   text-align: center;
   font: 11px Arial, sans-serif;
   color: #000;
