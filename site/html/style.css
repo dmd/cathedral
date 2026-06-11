@@ -1,0 +1,206 @@
+/* Cathedral — HTML/JS port of the 2001 Flash original (780x500 stage). */
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+#scaler {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+}
+
+#stage {
+  position: relative;
+  width: 780px;
+  height: 500px;
+  background: #ffffff;
+  font-family: Arial, Helvetica, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#intro, #game {
+  position: absolute;
+  inset: 0;
+}
+
+/* ---------- intro screen ---------- */
+
+#introphoto {
+  position: absolute;
+  left: 265px;
+  top: 21px;
+  width: 250px;
+}
+
+#introtitle {
+  position: absolute;
+  left: 184px;
+  top: 207px;
+  width: 400px;
+  text-align: center;
+  font: 75px Garamond, 'Times New Roman', serif;
+  color: #000;
+  line-height: 1;
+  pointer-events: none;
+}
+
+#introsub {
+  position: absolute;
+  left: 184px;
+  top: 304px;
+  width: 400px;
+  text-align: center;
+  font: 25px Garamond, 'Times New Roman', serif;
+  color: #000;
+  line-height: 1;
+  pointer-events: none;
+}
+
+#howto {
+  position: absolute;
+  left: 273px;
+  top: 338px;
+  width: 234px;
+  text-align: center;
+  font: bold 17px Garamond, 'Times New Roman', serif;
+  color: #191970;
+}
+
+#namelabel, #opplabel {
+  position: absolute;
+  left: 79px;
+  font: 25px Garamond, 'Times New Roman', serif;
+  color: #000;
+}
+#namelabel { top: 404px; }
+#opplabel  { top: 443px; }
+
+#namefield, #oppfield {
+  position: absolute;
+  left: 208px;
+  width: 128px;
+  height: 26px;
+  border: 1px solid #000;
+  border-radius: 0;
+  background: #fff;
+  font: 25px Garamond, 'Times New Roman', serif;
+  padding: 0 2px;
+  outline: none;
+}
+#namefield { top: 401px; }
+#oppfield  { top: 439px; }
+
+#playbtn {
+  position: absolute;
+  left: 387px;
+  top: 423px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #333333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+#playbtn svg { margin-left: 3px; }
+#playbtn:hover, #playbtn:focus-visible { background: #ff9900; }
+
+/* ---------- game screen ---------- */
+
+#credits {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 27px;
+  text-align: center;
+  pointer-events: none;
+}
+#credits span { display: block; }
+#credits .l1 { font-size: 20px; line-height: 21px; }
+#credits .l2 { font-size: 10px; line-height: 13.5px; }
+#credits .l3 { font-size: 12px; margin-top: 15px; }
+
+#board {
+  position: absolute;
+  left: 249.5px;
+  top: 124.5px;
+  width: 251px;
+  height: 251px;
+  pointer-events: none;
+}
+
+#pieces {
+  position: absolute;
+  inset: 0;
+}
+
+.piece {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  touch-action: none;
+}
+.piece path {
+  pointer-events: visiblepainted;
+  cursor: grab;
+}
+.piece.dragging path { cursor: grabbing; }
+
+#failnotice {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 107px;
+  text-align: center;
+  font: 12px Arial, sans-serif;
+  color: #990000;
+  display: none;
+  pointer-events: none;
+}
+
+#endturn, #resetbtn {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+#endturn  { left: 337px; top: 396px; }
+#resetbtn { left: 25px;  top: 450px; }
+
+#endturn .dot, #resetbtn .dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #333333;
+  flex: none;
+}
+#endturn:hover .dot, #resetbtn:hover .dot { background: #ff9900; }
+#endturn:active .dot, #resetbtn:active .dot { background: #ff9900; }
+
+#endturn .lbl, #resetbtn .lbl {
+  margin-left: 6px;
+  font: 14px Helvetica, Arial, sans-serif;
+  color: #000;
+}
+#resetbtn .lbl { color: #cccccc; }
+#resetbtn:hover .lbl { color: #000; }
+#endturn:active .lbl, #resetbtn:active .lbl { color: #ff9900; }
+
+#endturn.dim { opacity: 0.05; }
+
+#opstatus {
+  position: absolute;
+  left: 555px;
+  top: 483px;
+  width: 224px;
+  text-align: center;
+  font: 11px Arial, sans-serif;
+  color: #000;
+}

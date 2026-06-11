@@ -2,6 +2,17 @@
 
 This repository contains the original SWF (in `site/`) and a small backend server that lets multiple clients share game state. The SWF uses `XMLSocket` and is hardcoded to connect to `eco.3e.org:9604`.
 
+## HTML/JS version (no Flash)
+
+`site/html/` is a plain HTML/JS/CSS port of the game — no Ruffle or Flash required. It was reconstructed from `cathedral.swf` (vector shapes, layout, sounds, and ActionScript behavior extracted with JPEXS ffdec; see `cathedral.flr.txt` for the original code).
+
+- Open `site/html/index.html` (it works offline/file:// as a local two-hands board, or served over HTTP with the proxy below for multiplayer).
+- It speaks the original XMLSocket protocol (null-terminated `<MOTION/>` / `<YOURTURN/>` / `<ALIVE/>` XML) over a WebSocket, defaulting to `ws(s)://<host>/ws` like the Ruffle page — so it interoperates with the SWF running in Ruffle on the same `xmlsocket_server` + `websockify` stack. An HTML player and a Ruffle player can play each other.
+- URL parameters: `?name=` and `?opp=` prefill the intro fields; `?ws=ws://host:port` overrides the WebSocket URL (handy for local testing against a bare `websockify`).
+- Controls match the original: drag pieces (25px grid snap on drop), SPACE rotates the last-grabbed piece (double-click/double-tap also rotates), `end turn` and `reset` as before.
+
+With the Docker/Caddy setup below, the HTML version is served at `/html/` alongside the Ruffle version at `/`.
+
 ## 1) Run the XMLSocket broadcast server
 
 ```zsh
