@@ -129,6 +129,27 @@ function freshPlay(cathSpot) {
   check('E: no claims granted on first build', ev.claimedCells.length === 0);
 }
 
+// Scenario G: capturing the piece that backed an enemy claim flips that
+// stale territory to the captor ("claim the space enclosed", rule 5).
+{
+  const s = freshPlay({ rot: 0, col: 2, row: 6 });
+  check('G: green opening (far away)', !!E.place(s, 16, 0, 0, 9));
+  // red manor at (7,1),(8,0),(8,1),(9,1) walls off the corner (9,0)
+  check('G: red manor walls corner', !!E.place(s, 9, 0, 8, 1));
+  check('G: green stable (6,0),(6,1)', !!E.place(s, 17, 90, 7, 0));
+  // red's next move triggers the claim of (9,0)
+  check('G: red tavern elsewhere', !!E.place(s, 1, 0, 0, 7));
+  check('G: corner (9,0) is red territory', s.terr[9] === 2);
+  check('G: green tavern (6,2)', !!E.place(s, 15, 0, 6, 2));
+  check('G: red tavern 2 elsewhere', !!E.place(s, 2, 0, 1, 7));
+  // green bridge (7,2),(8,2),(9,2) encloses the corner area: only enemy
+  // inside is the red manor -> captured, and (9,0) must flip to green
+  const ev = E.place(s, 22, 0, 7, 2);
+  check('G: closing bridge placed', !!ev);
+  check('G: red manor captured', ev.captured.includes(9));
+  check('G: stale red territory flipped to green', s.terr[9] === 1);
+}
+
 // ---------- AI vs AI soak ----------
 {
   let maxMs = 0, totalGames = 12, decisive = 0;

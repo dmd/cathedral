@@ -158,7 +158,9 @@ const ENGINE = (() => {
         ev.captured.push(id);
       }
       for (const k of comp) {
-        if (s.terr[k] === 0) {
+        // claim the whole enclosed space — including any stale enemy
+        // territory whose backing wall was just captured
+        if (s.terr[k] !== player) {
           s.terr[k] = player;
           ev.claimedCells.push(k);
         }
