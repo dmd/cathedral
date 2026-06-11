@@ -702,7 +702,9 @@ function updateStatus() {
   if (mode !== 'net') return;
   const peerOk = ws && ws.readyState === WebSocket.OPEN &&
                  Date.now() - lastPeerAlive < ALIVE_TIMEOUT_MS;
-  failnotice.style.display = peerOk ? 'none' : 'block';
+  // the game message owns the line above the board; opstatus still shows
+  // the connection state bottom-right
+  failnotice.style.display = (peerOk || gamemsg.textContent) ? 'none' : 'block';
   opstatus.textContent = peerOk
     ? `${origin} connected to ${target}`
     : 'no opponent connected';
@@ -726,6 +728,7 @@ function startGame() {
   enterGameScreen();
   if (chk && !rulesWanted) {
     msg('rules enforcement needs two distinct names — free-form play');
+    setTimeout(() => { if (!rulesActive) msg(''); }, 6000);
   } else if (rulesWanted) {
     msg(`waiting for ${target} to connect…`);
   }
