@@ -56,6 +56,7 @@ let rulesActive = false;    // both sides enforce: engine drives the game
 let net = null;             // ENGINE state for rules-enforced net play
 let netGameNum = 0;         // cathedral duty alternates; synced via RESET
 let myColor = 1;            // 1 green / 2 red (lexicographically first name is green)
+let pending = null;         // tentative placement {id, rot, col, row}; commits on End Turn
 let selected = -1;          // last grabbed piece (SPACE rotates it)
 let zTop = 100;
 let ws = null;
@@ -155,9 +156,9 @@ function startDrag(e, id) {
     p.x = Math.round(p.x / GRID) * GRID;
     p.y = Math.round(p.y / GRID) * GRID;
     if (mode === 'ai') {
-      aiDrop(p);
+      rulesDrop(p, ai);
     } else if (rulesActive) {
-      netDrop(p);
+      rulesDrop(p, net);
     } else if (rulesWanted && !rulesDecided) {
       gateDrop(p);
     } else {
@@ -176,6 +177,13 @@ function rotateSelected() {
   if (mode === 'ai' && !aiDraggable(selected)) return;
   if (mode === 'net' && rulesActive && !netDraggable(selected)) return;
   const p = state[selected];
+  // a pending board placement may only rotate into another legal position
+  const eng = mode === 'ai' ? ai : (rulesActive ? net : null);
+  if (eng && pending && pending.id === selected && !p.el.classList.contains('dragging')) {
+    const newRot = normRot360(p.rot + 90);
+    if (!ENGINE.canPlace(eng, eng.turn, selected, newRot, pending.col, pending.row)) return;
+    pending.rot = newRot;
+  }
   p.rot = normRot(p.rot + 90);
   positionPiece(p);
   if (mode === 'net') sendMove(selected);
@@ -393,40 +401,102 @@ function applyEvents(eng, ev, mineColor, mineName, theirsName) {
   return notes;
 }
 
-function aiDrop(p) {
+// Drop handler for both rules modes (vs. computer and rules-enforced net).
+// A legal board drop becomes a *pending* placement: still movable, rotatable,
+// returnable to the tray, or swappable — End Turn commits it.
+function rulesDrop(p, eng) {
+  const isNet = mode === 'net';
   const undo = () => {
     p.x = p.dragFrom.x;
     p.y = p.dragFrom.y;
     p.rot = p.dragFrom.rot;
     glidePiece(p);
+    if (isNet) sendMove(p.id);
   };
   const { rot, col0, row0, cells, inside } = dropInfo(p);
 
   if (inside.length === 0) {       // parked in the tray — not a move
     positionPiece(p);
+    if (isNet) sendMove(p.id);
+    if (pending && pending.id === p.id) {
+      pending = null;              // took the tentative placement back
+      updateEndTurn();
+      msg(eng.phase === 'cathedral'
+        ? 'place the cathedral anywhere on the board'
+        : 'your turn — place a building');
+    }
     return;
   }
+  const me = isNet ? myColor : HUMAN;
   if (inside.length < cells.length || !Number.isInteger(col0) || !Number.isInteger(row0) ||
-      ai.turn !== HUMAN) {
+      eng.turn !== me ||
+      !ENGINE.canPlace(eng, me, p.id, rot, col0, row0)) {
     undo();
     return;
   }
-  const ev = ENGINE.place(ai, p.id, rot, col0, row0);
-  if (!ev) {
-    undo();
-    return;
+  // legal: this becomes the pending placement (replacing any previous one)
+  if (pending && pending.id !== p.id) {
+    const prev = state[pending.id];
+    const orig = resetPositions.find(r => r.id === pending.id);
+    prev.x = orig.x;
+    prev.y = orig.y;
+    prev.rot = orig.rot;
+    glidePiece(prev);
+    if (isNet) sendMove(pending.id);
   }
+  pending = { id: p.id, rot, col: col0, row: row0 };
   positionPiece(p);
-  const notes = applyEvents(ai, ev, HUMAN, 'your', "the computer's");
-  updateAIScore();
-  refreshLocks();
-  proceed(notes.join('; '));
+  if (isNet) sendMove(p.id);
+  updateEndTurn();
+  msg('press end turn to confirm — or move, rotate, or take the piece back');
+}
+
+function commitPending() {
+  const isNet = mode === 'net';
+  const eng = isNet ? net : ai;
+  const { id, rot, col, row } = pending;
+  pending = null;
+  const p = state[id];
+  const ev = ENGINE.place(eng, id, rot, col, row);
+  if (!ev) {                       // defensive: should not happen
+    const orig = resetPositions.find(r => r.id === id);
+    p.x = orig.x;
+    p.y = orig.y;
+    p.rot = orig.rot;
+    glidePiece(p);
+    if (isNet) sendMove(id);
+    updateEndTurn();
+    isNet ? netProceed('that placement is no longer legal')
+          : proceed('that placement is no longer legal');
+    return;
+  }
+  if (isNet) {
+    wsSend(`<MOTION id="${id}" x="${Math.round(p.x)}" y="${Math.round(p.y)}"` +
+           ` rot="${Math.round(normRot(p.rot))}" commit="1"` +
+           ` target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+    const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
+    netProceed(notes.join('; '));
+  } else {
+    const notes = applyEvents(ai, ev, HUMAN, 'your', "the computer's");
+    updateAIScore();
+    refreshLocks();
+    proceed(notes.join('; '));
+  }
+}
+
+function updateEndTurn() {
+  if (mode === 'ai' || rulesActive) {
+    endturnBtn.style.display = '';
+    endturnBtn.classList.remove('dim');
+    endturnBtn.classList.toggle('disabled', !pending);
+  }
 }
 
 function proceed(prefix) {
   const pre = prefix ? prefix + ' — ' : '';
   updateAIScore();
   refreshLocks();
+  updateEndTurn();
   if (ai.phase === 'over') {
     endAIGame();
     return;
@@ -495,6 +565,7 @@ function endAIGame() {
 function newAIGame() {
   ai = ENGINE.newGame(aiGameNum % 2 === 0 ? COMP : HUMAN);
   aiGameNum++;
+  pending = null;
   for (const r of resetPositions) {
     const p = state[r.id];
     p.x = r.x;
@@ -529,7 +600,6 @@ function engageRules() {
   rulesDecided = true;
   rulesActive = true;
   myColor = origin <= target ? 1 : 2;
-  endturnBtn.style.display = 'none';
   const left = document.getElementById('youlabel');
   const right = document.getElementById('complabel');
   left.textContent = myColor === 1 ? '▼ YOU ▼' : `▼ ${target} ▼`;
@@ -542,6 +612,7 @@ function engageRules() {
 function initNetGame(n) {
   netGameNum = n;
   net = ENGINE.newGame(netPlacer(n));
+  pending = null;
   for (const r of resetPositions) {
     const p = state[r.id];
     p.x = r.x;
@@ -564,6 +635,7 @@ function updateNetScore() {
 function netProceed(prefix) {
   const parts = prefix ? [prefix] : [];
   updateNetScore();
+  updateEndTurn();
   while (net.phase === 'play' && !ENGINE.hasLegalMove(net, net.turn)) {
     parts.push(net.turn === myColor ? 'you have no legal moves — you pass'
                                     : `${target} has no legal moves and passes`);
@@ -610,38 +682,6 @@ function gateDrop(p) {
   msg(`waiting for ${target || 'opponent'} to connect before the game starts…`);
 }
 
-function netDrop(p) {
-  const undo = () => {
-    p.x = p.dragFrom.x;
-    p.y = p.dragFrom.y;
-    p.rot = p.dragFrom.rot;
-    glidePiece(p);
-    sendMove(p.id);
-  };
-  const { rot, col0, row0, cells, inside } = dropInfo(p);
-  if (inside.length === 0) {       // parked in the tray — not a move
-    positionPiece(p);
-    sendMove(p.id);
-    return;
-  }
-  if (inside.length < cells.length || !Number.isInteger(col0) || !Number.isInteger(row0) ||
-      net.turn !== myColor) {
-    undo();
-    return;
-  }
-  const ev = ENGINE.place(net, p.id, rot, col0, row0);
-  if (!ev) {
-    undo();
-    return;
-  }
-  positionPiece(p);
-  wsSend(`<MOTION id="${p.id}" x="${Math.round(p.x)}" y="${Math.round(p.y)}"` +
-         ` rot="${Math.round(normRot(p.rot))}" commit="1"` +
-         ` target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
-  const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
-  netProceed(notes.join('; '));
-}
-
 function netCommitFromPeer(p, x, y, rot) {
   const col0 = (x - BOARD_X) / GRID;
   const row0 = (y - BOARD_Y) / GRID;
@@ -665,6 +705,10 @@ function netCommitFromPeer(p, x, y, rot) {
 // ---------- buttons ----------
 
 endturnBtn.addEventListener('click', () => {
+  if (mode === 'ai' || rulesActive) {
+    if (pending) commitPending();
+    return;
+  }
   endturnBtn.classList.add('dim');
   wsSend(`<YOURTURN target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
 });
@@ -744,7 +788,6 @@ function startGame() {
 function startAIGame() {
   mode = 'ai';
   enterGameScreen();
-  endturnBtn.style.display = 'none';
   failnotice.style.display = 'none';
   document.getElementById('youlabel').hidden = false;
   document.getElementById('complabel').hidden = false;

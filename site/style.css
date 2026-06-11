@@ -267,6 +267,7 @@ html, body {
 #endturn:active .lbl, #resetbtn:active .lbl { color: #ff9900; }
 
 #endturn.dim { opacity: 0.05; }
+#endturn.disabled { opacity: 0.35; cursor: default; }
 
 #opstatus {
   position: absolute;

@@ -24,6 +24,7 @@ network mode — which, like the original SWF, is a free-form shared tabletop �
 the computer mode enforces the full rules from `rules.html` via `site/engine.js`:
 
 - legal placement only (on the grid, no overlaps, not in enemy territory; illegal drops bounce back);
+- a legal drop is *tentative*: move it, rotate it, swap it for another piece, or take it back — **end turn** commits the placement;
 - one player places the cathedral to open the game, the other moves first (the duty alternates each game via `reset`);
 - wall-to-wall enclosure claims territory (corner-to-corner contact leaks, per the official notes), shown as tinted squares;
 - enclosing exactly one enemy building captures it (it returns to its owner's hand); a captured cathedral is gone for good;
