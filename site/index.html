@@ -24,6 +24,9 @@
             <path d="M3.3 3.2 L3.3 0 12.9 6.8 3.3 13.75 3.3 10.4 0 10.35 0 3.2 3.3 3.2" fill="#ffffff"/>
           </svg>
         </div>
+        <div id="aibtn" role="button" tabindex="0">
+          <span class="dot"></span><span class="lbl">Play vs. Computer</span>
+        </div>
       </section>
 
       <section id="game" hidden>
@@ -34,8 +37,10 @@
           <span class="l3">press SPACE to rotate selected piece</span>
         </div>
         <img id="board" src="assets/board.svg" alt="">
+        <div id="territory"></div>
         <div id="pieces"></div>
         <div id="failnotice">WARNING: NOT CONNECTED</div>
+        <div id="gamemsg"></div>
         <div id="endturn" role="button" tabindex="0">
           <span class="dot"></span><span class="lbl">end turn</span>
         </div>
@@ -48,6 +53,7 @@
     </div>
   </div>
   <script src="data.js"></script>
+  <script src="engine.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
