@@ -72,6 +72,16 @@ const resetPositions = PIECES.map(p => ({
   id: p.id, x: Math.round(p.x), y: Math.round(p.y), rot: p.rot,
 }));
 
+// Glide a piece back to its tray spot (capture returns, pending swaps, …).
+function sendHome(p, announce) {
+  const orig = resetPositions[p.id];
+  p.x = orig.x;
+  p.y = orig.y;
+  p.rot = orig.rot;
+  glidePiece(p);
+  if (announce && mode === 'net') sendMove(p.id);
+}
+
 function normRot(r) {
   r = ((r % 360) + 360) % 360;
   return r > 180 ? r - 360 : r;   // Flash _rotation is -180..180
@@ -389,11 +399,7 @@ function applyEvents(eng, ev, mineColor, mineName, theirsName) {
       p.el.classList.add('gone');
       notes.push('the cathedral is captured — gone for good');
     } else {
-      const orig = resetPositions.find(r => r.id === id);
-      p.x = orig.x;
-      p.y = orig.y;
-      p.rot = orig.rot;
-      glidePiece(p);
+      sendHome(p);
       notes.push(`${ENGINE.ownerOf(id) === mineColor ? mineName : theirsName} ${pieceName(id)} was captured`);
     }
   }
@@ -436,13 +442,7 @@ function rulesDrop(p, eng) {
   }
   // legal: this becomes the pending placement (replacing any previous one)
   if (pending && pending.id !== p.id) {
-    const prev = state[pending.id];
-    const orig = resetPositions.find(r => r.id === pending.id);
-    prev.x = orig.x;
-    prev.y = orig.y;
-    prev.rot = orig.rot;
-    glidePiece(prev);
-    if (isNet) sendMove(pending.id);
+    sendHome(state[pending.id], true);
   }
   pending = { id: p.id, rot, col: col0, row: row0 };
   positionPiece(p);
@@ -459,12 +459,7 @@ function commitPending() {
   const p = state[id];
   const ev = ENGINE.place(eng, id, rot, col, row);
   if (!ev) {                       // defensive: should not happen
-    const orig = resetPositions.find(r => r.id === id);
-    p.x = orig.x;
-    p.y = orig.y;
-    p.rot = orig.rot;
-    glidePiece(p);
-    if (isNet) sendMove(id);
+    sendHome(p, true);
     updateEndTurn();
     isNet ? netProceed('that placement is no longer legal')
           : proceed('that placement is no longer legal');
@@ -478,8 +473,6 @@ function commitPending() {
     netProceed(notes.join('; '));
   } else {
     const notes = applyEvents(ai, ev, HUMAN, 'your', "the computer's");
-    updateAIScore();
-    refreshLocks();
     proceed(notes.join('; '));
   }
 }
@@ -543,10 +536,9 @@ function computerMove() {
   glidePiece(p);
   setTimeout(() => {
     const notes = applyEvents(ai, ev, HUMAN, 'your', "the computer's");
-    const name = pieceName(m.id);
     const what = placingCathedral
       ? 'computer placed the cathedral'
-      : `computer placed ${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}`;
+      : `computer placed ${withArticle(pieceName(m.id))}`;
     proceed([what, ...notes].join('; '));
   }, 420);
 }
@@ -761,6 +753,7 @@ function enterGameScreen() {
 }
 
 function startGame() {
+  if (inGame) return;
   mode = 'net';
   origin = document.getElementById('namefield').value.trim().toUpperCase();
   target = document.getElementById('oppfield').value.trim().toUpperCase();
@@ -783,6 +776,7 @@ function startGame() {
 }
 
 function startAIGame() {
+  if (inGame) return;
   mode = 'ai';
   enterGameScreen();
   failnotice.style.display = 'none';

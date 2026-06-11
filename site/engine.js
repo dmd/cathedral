@@ -71,7 +71,6 @@ const ENGINE = (() => {
       firstBuildDone: { 1: false, 2: false },
       phase: 'cathedral',                 // 'cathedral' | 'play' | 'over'
       turn: cathedralPlacer,
-      cathedralPlacer,
       passes: 0,
     };
   }
@@ -86,7 +85,6 @@ const ENGINE = (() => {
       firstBuildDone: { ...s.firstBuildDone },
       phase: s.phase,
       turn: s.turn,
-      cathedralPlacer: s.cathedralPlacer,
       passes: s.passes,
     };
   }
