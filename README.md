@@ -7,6 +7,23 @@ A two-player online version of the Cathedral board game, originally written in F
 - URL parameters: `?name=` and `?opp=` prefill the intro fields; `?ws=ws://host:port` overrides the WebSocket URL (handy for local testing against a bare `websockify`).
 - Controls match the original: drag pieces (25px grid snap on drop), SPACE rotates the last-grabbed piece (double-click/double-tap also rotates), `end turn` and `reset` as before.
 
+## Playing against the computer
+
+The intro screen also offers **Play vs. Computer** (or open `?ai=1`). Unlike the
+network mode — which, like the original SWF, is a free-form shared tabletop —
+the computer mode enforces the full rules from `rules.html` via `site/engine.js`:
+
+- legal placement only (on the grid, no overlaps, not in enemy territory; illegal drops bounce back);
+- one player places the cathedral to open the game, the other moves first (the duty alternates each game via `reset`);
+- wall-to-wall enclosure claims territory (corner-to-corner contact leaks, per the official notes), shown as tinted squares;
+- enclosing exactly one enemy building captures it (it returns to its owner's hand); a captured cathedral is gone for good;
+- no claims on a player's first building move; passes are automatic; the game ends when neither side can move, and the fewest unplaced squares wins.
+
+The AI evaluates every legal placement (territory, captures, building size,
+space control, centrality) and checks the opponent's best reply for each of its
+top candidates. `tests/engine-test.js` (run with `node`) covers the enclosure /
+capture rules and plays AI-vs-AI soak games.
+
 The original `cathedral.swf` and `cathedral.fla` are kept in the repo for reference; the SWF is hardcoded to connect to `eco.3e.org:9604` and still works in Ruffle Desktop against the server below.
 
 ## 1) Run the XMLSocket broadcast server

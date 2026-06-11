@@ -112,6 +112,28 @@ html, body {
 #playbtn svg { margin-left: 3px; }
 #playbtn:hover, #playbtn:focus-visible { background: #ff9900; }
 
+#aibtn {
+  position: absolute;
+  left: 455px;
+  top: 427px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+#aibtn .dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #333333;
+  flex: none;
+}
+#aibtn:hover .dot, #aibtn:focus-visible .dot { background: #ff9900; }
+#aibtn .lbl {
+  margin-left: 6px;
+  font: 14px Helvetica, Arial, sans-serif;
+  color: #000;
+}
+
 /* ---------- game screen ---------- */
 
 #credits {
@@ -141,6 +163,19 @@ html, body {
   inset: 0;
 }
 
+#territory {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+#territory .cell {
+  position: absolute;
+  width: 25px;
+  height: 25px;
+}
+#territory .cell.t1 { background: rgba(0, 102, 0, 0.22); }
+#territory .cell.t2 { background: rgba(153, 0, 0, 0.22); }
+
 .piece {
   position: absolute;
   overflow: visible;
@@ -152,6 +187,22 @@ html, body {
   cursor: grab;
 }
 .piece.dragging path { cursor: grabbing; }
+.piece.locked path { cursor: default; }
+.piece.moving {
+  transition: left 0.35s ease, top 0.35s ease, transform 0.35s ease;
+}
+.piece.gone { display: none; }
+
+#gamemsg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 102px;
+  text-align: center;
+  font: bold 13px Arial, sans-serif;
+  color: #191970;
+  pointer-events: none;
+}
 
 #failnotice {
   position: absolute;
