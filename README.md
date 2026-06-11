@@ -6,6 +6,16 @@ A two-player online version of the Cathedral board game, originally written in F
 - It speaks the original XMLSocket protocol (null-terminated `<MOTION/>` / `<YOURTURN/>` / `<ALIVE/>` XML) over a WebSocket, defaulting to `ws(s)://<host>/ws` — wire-compatible with the original SWF, so an HTML player and the SWF running in Ruffle (or Flash) can play each other against the same server.
 - URL parameters: `?name=` and `?opp=` prefill the intro fields; `?ws=ws://host:port` overrides the WebSocket URL (handy for local testing against a bare `websockify`).
 - Controls match the original: drag pieces (25px grid snap on drop), SPACE rotates the last-grabbed piece (double-click/double-tap also rotates), `end turn` and `reset` as before.
+- **Enforce the rules** (intro checkbox, on by default): when both players' clients
+  have it on (and both entered distinct names), person-vs-person games are
+  rule-enforced by the same engine as the computer mode — assigned colors (the
+  lexicographically first name plays green and opens game 1 with the cathedral),
+  real turns, legal placements only, territory shading, captures, automatic
+  passes, and scoring; `reset` starts the next game with duties swapped. The two
+  clients negotiate via a `rules="1"` attribute on their ALIVE keepalives and run
+  the engine in lockstep (placements travel as `MOTION` with `commit="1"`). If
+  the opponent isn't enforcing — toggle off, or the original SWF in Ruffle —
+  play gracefully falls back to the classic free-form tabletop.
 
 ## Playing against the computer
 

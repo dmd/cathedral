@@ -112,6 +112,17 @@ html, body {
 #playbtn svg { margin-left: 3px; }
 #playbtn:hover, #playbtn:focus-visible { background: #ff9900; }
 
+#ruleslabel {
+  position: absolute;
+  left: 208px;
+  top: 474px;
+  font: 16px Garamond, 'Times New Roman', serif;
+  color: #000;
+  cursor: pointer;
+  user-select: none;
+}
+#ruleslabel input { vertical-align: -2px; }
+
 #aibtn {
   position: absolute;
   left: 455px;
@@ -262,6 +273,16 @@ html, body {
   left: 555px;
   top: 483px;
   width: 224px;
+  text-align: center;
+  font: 11px Arial, sans-serif;
+  color: #000;
+}
+
+#netscore {
+  position: absolute;
+  left: 250px;
+  top: 483px;
+  width: 280px;
   text-align: center;
   font: 11px Arial, sans-serif;
   color: #000;

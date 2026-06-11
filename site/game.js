@@ -50,6 +50,12 @@ const gamemsg = document.getElementById('gamemsg');
 let mode = null;            // 'net' | 'ai'
 let origin = '';            // my name (uppercased, like the SWF)
 let target = '';            // opponent name
+let rulesWanted = false;    // "enforce the rules" toggle (net mode)
+let rulesDecided = false;   // have we seen the peer's stance yet?
+let rulesActive = false;    // both sides enforce: engine drives the game
+let net = null;             // ENGINE state for rules-enforced net play
+let netGameNum = 0;         // cathedral duty alternates; synced via RESET
+let myColor = 1;            // 1 green / 2 red (lexicographically first name is green)
 let selected = -1;          // last grabbed piece (SPACE rotates it)
 let zTop = 100;
 let ws = null;
@@ -116,6 +122,7 @@ function stagePoint(e) {
 
 function startDrag(e, id) {
   if (mode === 'ai' && !aiDraggable(id)) return;
+  if (mode === 'net' && rulesActive && !netDraggable(id)) return;
   e.preventDefault();
   const p = state[id];
   selected = id;
@@ -149,6 +156,10 @@ function startDrag(e, id) {
     p.y = Math.round(p.y / GRID) * GRID;
     if (mode === 'ai') {
       aiDrop(p);
+    } else if (rulesActive) {
+      netDrop(p);
+    } else if (rulesWanted && !rulesDecided) {
+      gateDrop(p);
     } else {
       positionPiece(p);
       sendMove(id);
@@ -163,6 +174,7 @@ function startDrag(e, id) {
 function rotateSelected() {
   if (selected < 0) return;
   if (mode === 'ai' && !aiDraggable(selected)) return;
+  if (mode === 'net' && rulesActive && !netDraggable(selected)) return;
   const p = state[selected];
   p.rot = normRot(p.rot + 90);
   positionPiece(p);
@@ -207,6 +219,10 @@ function connect() {
     return;
   }
   ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    wsSend(`<ALIVE target="${xmlEsc(target)}" origin="${xmlEsc(origin)}"` +
+           `${rulesWanted ? ' rules="1"' : ''} />`);
+  };
   ws.onmessage = ev => {
     const bytes = typeof ev.data === 'string'
       ? new TextEncoder().encode(ev.data)
@@ -260,17 +276,41 @@ function handleMessage(text) {
   if (m.getAttribute('target') !== origin || m.getAttribute('origin') !== target) return;
 
   if (m.nodeName === 'MOTION') {
-    const p = state[+m.getAttribute('id')];
+    const id = +m.getAttribute('id');
+    const p = state[id];
     if (!p) return;
+    const isCommit = m.getAttribute('commit') === '1';
+    if (isCommit && rulesWanted && !rulesActive && !rulesDecided) engageRules();
+    if (rulesActive && isCommit) {
+      netCommitFromPeer(p, +m.getAttribute('x'), +m.getAttribute('y'), +m.getAttribute('rot'));
+      return;
+    }
+    if (rulesActive) {
+      // live drag preview: only pieces still in the opponent's hand may move
+      if (!net.hand.includes(id)) return;
+      if (id !== 0 && ENGINE.ownerOf(id) === myColor) return;
+    }
     p.x = +m.getAttribute('x');
     p.y = +m.getAttribute('y');
     p.rot = +m.getAttribute('rot');
     positionPiece(p);
   } else if (m.nodeName === 'YOURTURN') {
+    if (rulesActive) return;       // turns are implicit when enforcing rules
     endturnBtn.classList.remove('dim');
     turnsound.play().catch(() => {});
   } else if (m.nodeName === 'ALIVE') {
     lastPeerAlive = Date.now();
+    if (rulesWanted && !rulesDecided) {
+      rulesDecided = true;
+      if (m.getAttribute('rules') === '1') {
+        engageRules();
+      } else {
+        msg(`${target} is not enforcing rules — free-form play`);
+        setTimeout(() => { if (!rulesActive) msg(''); }, 6000);
+      }
+    }
+  } else if (m.nodeName === 'RESET' && rulesActive) {
+    initNetGame(+m.getAttribute('game') || 0);
   }
 }
 
@@ -289,10 +329,24 @@ function aiDraggable(id) {
 }
 
 function refreshLocks() {
-  if (mode !== 'ai') return;
+  let test = null;
+  if (mode === 'ai') test = aiDraggable;
+  else if (mode === 'net' && rulesActive) test = netDraggable;
   for (const id of Object.keys(state)) {
-    state[id].el.classList.toggle('locked', !aiDraggable(+id));
+    state[id].el.classList.toggle('locked', test ? !test(+id) : false);
   }
+}
+
+const withArticle = name => `${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}`;
+
+// Where would this piece land on the grid? (after the drop snap)
+function dropInfo(p) {
+  const rot = normRot360(p.rot);
+  const col0 = (p.x - BOARD_X) / GRID;
+  const row0 = (p.y - BOARD_Y) / GRID;
+  const cells = ENGINE.cellsFor(p.id, rot).map(([i, j]) => [col0 + i, row0 + j]);
+  const inside = cells.filter(([c, r]) => c >= 0 && c < 10 && r >= 0 && r < 10);
+  return { rot, col0, row0, cells, inside };
 }
 
 function msg(text) {
@@ -305,12 +359,12 @@ function updateAIScore() {
     `you: ${sc[HUMAN]} · computer: ${sc[COMP]} squares unplaced`;
 }
 
-function renderTerritory() {
+function renderTerritory(eng) {
   territoryLayer.innerHTML = '';
   for (let k = 0; k < 100; k++) {
-    if (ai.terr[k] === 0) continue;
+    if (eng.terr[k] === 0) continue;
     const d = document.createElement('div');
-    d.className = `cell t${ai.terr[k]}`;
+    d.className = `cell t${eng.terr[k]}`;
     d.style.left = (BOARD_X + (k % 10) * GRID) + 'px';
     d.style.top = (BOARD_Y + Math.floor(k / 10) * GRID) + 'px';
     territoryLayer.appendChild(d);
@@ -318,7 +372,8 @@ function renderTerritory() {
 }
 
 // Apply capture/claim events visually; returns a description of captures.
-function applyEvents(ev) {
+// mineName/theirsName label the owners of captured pieces.
+function applyEvents(eng, ev, mineColor, mineName, theirsName) {
   const notes = [];
   for (const id of ev.captured) {
     const p = state[id];
@@ -331,10 +386,10 @@ function applyEvents(ev) {
       p.y = orig.y;
       p.rot = orig.rot;
       glidePiece(p);
-      notes.push(`${ENGINE.ownerOf(id) === HUMAN ? 'your' : "the computer's"} ${pieceName(id)} is captured and returned`);
+      notes.push(`${ENGINE.ownerOf(id) === mineColor ? mineName : theirsName} ${pieceName(id)} is captured and returned`);
     }
   }
-  renderTerritory();
+  renderTerritory(eng);
   return notes;
 }
 
@@ -345,12 +400,7 @@ function aiDrop(p) {
     p.rot = p.dragFrom.rot;
     glidePiece(p);
   };
-  const rot = normRot360(p.rot);
-  const col0 = (p.x - BOARD_X) / GRID;
-  const row0 = (p.y - BOARD_Y) / GRID;
-  const cells = ENGINE.cellsFor(p.id, rot)
-    .map(([i, j]) => [col0 + i, row0 + j]);
-  const inside = cells.filter(([c, r]) => c >= 0 && c < 10 && r >= 0 && r < 10);
+  const { rot, col0, row0, cells, inside } = dropInfo(p);
 
   if (inside.length === 0) {       // parked in the tray — not a move
     positionPiece(p);
@@ -367,7 +417,7 @@ function aiDrop(p) {
     return;
   }
   positionPiece(p);
-  const notes = applyEvents(ev);
+  const notes = applyEvents(ai, ev, HUMAN, 'your', "the computer's");
   updateAIScore();
   refreshLocks();
   proceed(notes.join('; '));
@@ -421,7 +471,7 @@ function computerMove() {
   p.rot = normRot(m.rot);
   glidePiece(p);
   setTimeout(() => {
-    const notes = applyEvents(ev);
+    const notes = applyEvents(ai, ev, HUMAN, 'your', "the computer's");
     const name = pieceName(m.id);
     const what = placingCathedral
       ? 'computer placed the cathedral'
@@ -453,8 +503,163 @@ function newAIGame() {
     p.el.classList.remove('gone');
     positionPiece(p);
   }
-  renderTerritory();
+  renderTerritory(ai);
   proceed();
+}
+
+// ---------- rules-enforced network play ----------
+//
+// Engaged only when BOTH clients advertise rules="1" in their ALIVE
+// keepalives; otherwise the game stays a free-form tabletop (and remains
+// compatible with the SWF in Ruffle). Both clients run the same engine in
+// lockstep: only legal placements are sent (MOTION with commit="1"), and
+// claims/captures/passes are derived identically on each side.
+
+function netOther() { return ENGINE.other(myColor); }
+function netPlacer(n) { return n % 2 === 0 ? 1 : 2; }   // green opens game 1
+
+function netDraggable(id) {
+  if (!net || net.phase === 'over' || net.turn !== myColor) return false;
+  if (!net.hand.includes(id)) return false;
+  if (net.phase === 'cathedral') return id === 0;
+  return id !== 0 && ENGINE.ownerOf(id) === myColor;
+}
+
+function engageRules() {
+  rulesDecided = true;
+  rulesActive = true;
+  myColor = origin <= target ? 1 : 2;
+  endturnBtn.style.display = 'none';
+  const left = document.getElementById('youlabel');
+  const right = document.getElementById('complabel');
+  left.textContent = myColor === 1 ? '▼ YOU ▼' : `▼ ${target} ▼`;
+  right.textContent = myColor === 2 ? '▼ YOU ▼' : `▼ ${target} ▼`;
+  left.hidden = false;
+  right.hidden = false;
+  initNetGame(0);
+}
+
+function initNetGame(n) {
+  netGameNum = n;
+  net = ENGINE.newGame(netPlacer(n));
+  for (const r of resetPositions) {
+    const p = state[r.id];
+    p.x = r.x;
+    p.y = r.y;
+    p.rot = r.rot;
+    p.el.classList.remove('gone');
+    positionPiece(p);
+  }
+  renderTerritory(net);
+  netProceed();
+}
+
+function updateNetScore() {
+  if (!net) return;
+  const sc = ENGINE.score(net);
+  document.getElementById('netscore').textContent =
+    `you: ${sc[myColor]} · ${target}: ${sc[netOther()]} squares unplaced`;
+}
+
+function netProceed(prefix) {
+  const parts = prefix ? [prefix] : [];
+  updateNetScore();
+  while (net.phase === 'play' && !ENGINE.hasLegalMove(net, net.turn)) {
+    parts.push(net.turn === myColor ? 'you have no legal moves — you pass'
+                                    : `${target} has no legal moves and passes`);
+    ENGINE.pass(net);
+  }
+  refreshLocks();
+  if (net.phase === 'over') {
+    const sc = ENGINE.score(net);
+    let result;
+    if (sc[myColor] < sc[netOther()]) result = 'you win!';
+    else if (sc[myColor] > sc[netOther()]) result = `${target} wins.`;
+    else result = "it's a draw.";
+    parts.push(`game over — ${result} ` +
+               `(you: ${sc[myColor]}, ${target}: ${sc[netOther()]} squares unplaced) — ` +
+               `press reset for a new game`);
+    msg(parts.join('; '));
+    return;
+  }
+  if (net.phase === 'cathedral') {
+    parts.push(net.turn === myColor
+      ? 'place the cathedral anywhere on the board'
+      : `waiting for ${target} to place the cathedral…`);
+  } else if (net.turn === myColor) {
+    parts.push('your turn — place a building');
+    turnsound.play().catch(() => {});
+  } else {
+    parts.push(`waiting for ${target}…`);
+  }
+  msg(parts.join('; '));
+}
+
+function gateDrop(p) {
+  const { inside } = dropInfo(p);
+  if (inside.length === 0) {
+    positionPiece(p);
+    sendMove(p.id);
+    return;
+  }
+  p.x = p.dragFrom.x;
+  p.y = p.dragFrom.y;
+  p.rot = p.dragFrom.rot;
+  glidePiece(p);
+  sendMove(p.id);
+  msg(`waiting for ${target || 'opponent'} to connect before the game starts…`);
+}
+
+function netDrop(p) {
+  const undo = () => {
+    p.x = p.dragFrom.x;
+    p.y = p.dragFrom.y;
+    p.rot = p.dragFrom.rot;
+    glidePiece(p);
+    sendMove(p.id);
+  };
+  const { rot, col0, row0, cells, inside } = dropInfo(p);
+  if (inside.length === 0) {       // parked in the tray — not a move
+    positionPiece(p);
+    sendMove(p.id);
+    return;
+  }
+  if (inside.length < cells.length || !Number.isInteger(col0) || !Number.isInteger(row0) ||
+      net.turn !== myColor) {
+    undo();
+    return;
+  }
+  const ev = ENGINE.place(net, p.id, rot, col0, row0);
+  if (!ev) {
+    undo();
+    return;
+  }
+  positionPiece(p);
+  wsSend(`<MOTION id="${p.id}" x="${Math.round(p.x)}" y="${Math.round(p.y)}"` +
+         ` rot="${Math.round(normRot(p.rot))}" commit="1"` +
+         ` target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+  const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
+  netProceed(notes.join('; '));
+}
+
+function netCommitFromPeer(p, x, y, rot) {
+  const col0 = (x - BOARD_X) / GRID;
+  const row0 = (y - BOARD_Y) / GRID;
+  const wasCathedral = net.phase === 'cathedral';
+  const ev = ENGINE.place(net, p.id, normRot360(rot), col0, row0);
+  if (!ev) {
+    msg(`out of sync with ${target} — press reset to start a new game`);
+    return;
+  }
+  p.x = x;
+  p.y = y;
+  p.rot = rot;
+  glidePiece(p);
+  const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
+  const what = wasCathedral
+    ? `${target} placed the cathedral`
+    : `${target} placed ${withArticle(pieceName(p.id))}`;
+  netProceed([what, ...notes].join('; '));
 }
 
 // ---------- buttons ----------
@@ -467,6 +672,12 @@ endturnBtn.addEventListener('click', () => {
 resetBtn.addEventListener('click', () => {
   if (mode === 'ai') {
     newAIGame();
+    return;
+  }
+  if (rulesActive) {
+    const n = netGameNum + 1;
+    wsSend(`<RESET game="${n}" target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+    initNetGame(n);
     return;
   }
   for (const r of resetPositions) {
@@ -510,10 +721,18 @@ function startGame() {
   mode = 'net';
   origin = document.getElementById('namefield').value.trim().toUpperCase();
   target = document.getElementById('oppfield').value.trim().toUpperCase();
+  const chk = document.getElementById('ruleschk').checked;
+  rulesWanted = chk && !!origin && !!target && origin !== target;
   enterGameScreen();
+  if (chk && !rulesWanted) {
+    msg('rules enforcement needs two distinct names — free-form play');
+  } else if (rulesWanted) {
+    msg(`waiting for ${target} to connect…`);
+  }
   connect();
   setInterval(() => {
-    wsSend(`<ALIVE target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+    wsSend(`<ALIVE target="${xmlEsc(target)}" origin="${xmlEsc(origin)}"` +
+           `${rulesWanted ? ' rules="1"' : ''} />`);
   }, ALIVE_SEND_MS);
   setInterval(updateStatus, 300);
   updateStatus();
