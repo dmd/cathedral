@@ -1,50 +1,53 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cathedral</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    body {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #ffffff;
-    }
-    #player { width: 780px; height: 500px; }
-  </style>
-  <script>
-    var proxyScheme = (location.protocol === "https:") ? "wss://" : "ws://";
-    var proxyUrl = proxyScheme + location.host + "/ws";
-    window.RufflePlayer = window.RufflePlayer || {};
-    window.RufflePlayer.config = {
-      autoplay: "on",
-      unmuteOverlay: "hidden",
-      splashScreen: false,
-      openUrlMode: "allow",
-      allowNetworking: "all",
-      allowScriptAccess: true,
-      socketProxy: [
-        {
-          host: "eco.3e.org",
-          port: 9604,
-          proxyUrl: proxyUrl
-        }
-      ]
-    };
-  </script>
-  <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="player"></div>
-  <script>
-    var ruffle = window.RufflePlayer.newest();
-    var player = ruffle.createPlayer();
-    player.style.width = "100%";
-    player.style.height = "100%";
-    document.getElementById("player").appendChild(player);
-    player.load("cathedral.swf");
-  </script>
+  <div id="scaler">
+    <div id="stage">
+
+      <section id="intro">
+        <img id="introphoto" src="assets/intro.svg" alt="Cathedral board game">
+        <div id="introtitle">Cathedral</div>
+        <div id="introsub">the game of the mediaeval city</div>
+        <a id="howto" href="rules.html" target="_blank" rel="noopener">How to Play</a>
+        <label id="namelabel" for="namefield">Name:</label>
+        <input id="namefield" autocomplete="off" maxlength="20" spellcheck="false">
+        <label id="opplabel" for="oppfield">Opponent:</label>
+        <input id="oppfield" autocomplete="off" maxlength="20" spellcheck="false">
+        <div id="playbtn" role="button" tabindex="0" aria-label="play">
+          <svg width="18" height="19" viewBox="0 0 12.9 13.75">
+            <path d="M3.3 3.2 L3.3 0 12.9 6.8 3.3 13.75 3.3 10.4 0 10.35 0 3.2 3.3 3.2" fill="#ffffff"/>
+          </svg>
+        </div>
+      </section>
+
+      <section id="game" hidden>
+        <div id="credits">
+          <span class="l1">Cathedral</span>
+          <span class="l2">game &copy; Chrisbo I.P. Holdings Limited</span>
+          <span class="l2">code by Daniel Drucker dmd@3e.org</span>
+          <span class="l3">press SPACE to rotate selected piece</span>
+        </div>
+        <img id="board" src="assets/board.svg" alt="">
+        <div id="pieces"></div>
+        <div id="failnotice">WARNING: NOT CONNECTED</div>
+        <div id="endturn" role="button" tabindex="0">
+          <span class="dot"></span><span class="lbl">end turn</span>
+        </div>
+        <div id="resetbtn" role="button" tabindex="0">
+          <span class="dot"></span><span class="lbl">reset</span>
+        </div>
+        <div id="opstatus"></div>
+      </section>
+
+    </div>
+  </div>
+  <script src="data.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>
