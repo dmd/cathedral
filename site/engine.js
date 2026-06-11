@@ -305,6 +305,48 @@ const ENGINE = (() => {
     return g;
   }
 
+  // Multi-source BFS distance from a player's placed buildings through
+  // cells the player could still occupy (empty, not enemy territory).
+  function bfsDist(s, player) {
+    const opp = other(player);
+    const dist = new Int16Array(N * N).fill(32767);
+    const queue = [];
+    for (let k = 0; k < N * N; k++) {
+      const id = s.grid[k];
+      if (id !== -1 && id !== 0 && ownerOf(id) === player) {
+        dist[k] = 0;
+        queue.push(k);
+      }
+    }
+    for (let qi = 0; qi < queue.length; qi++) {
+      const k = queue[qi];
+      const c = k % N, r = (k - c) / N;
+      const d = dist[k] + 1;
+      for (const nk of [c + 1 < N ? k + 1 : -1, c - 1 >= 0 ? k - 1 : -1,
+                        r + 1 < N ? k + N : -1, r - 1 >= 0 ? k - N : -1]) {
+        if (nk < 0 || dist[nk] <= d) continue;
+        if (s.grid[nk] !== -1 || s.terr[nk] === opp) continue;
+        dist[nk] = d;
+        queue.push(nk);
+      }
+    }
+    return dist;
+  }
+
+  // Who is positioned to control each contested empty cell? (Voronoi-style
+  // influence — rewards contesting regions the opponent is walling off.)
+  function influence(s, me) {
+    const opp = other(me);
+    const dMe = bfsDist(s, me), dOpp = bfsDist(s, opp);
+    let diff = 0;
+    for (let k = 0; k < N * N; k++) {
+      if (s.grid[k] !== -1 || s.terr[k] !== 0) continue;
+      if (dMe[k] < dOpp[k]) diff++;
+      else if (dOpp[k] < dMe[k]) diff--;
+    }
+    return diff;
+  }
+
   // Positional evaluation of a board from `me`'s point of view.
   function posEval(s, me) {
     const opp = other(me);
@@ -316,13 +358,15 @@ const ENGINE = (() => {
     const sc = score(s);
     return 8.0 * (terrMe - terrOpp) +
            3.0 * (sc[opp] - sc[me]) +
-           1.5 * (usableSpace(s, me) - usableSpace(s, opp));
+           1.5 * (usableSpace(s, me) - usableSpace(s, opp)) +
+           1.2 * influence(s, me);
   }
 
   // ---------- alpha-beta search ----------
 
-  const BEAM = { 3: 12, 2: 10, 1: 8 };
-  const ROOT_BEAM = 18;
+  const BEAM = { 2: 10, 1: 8 };       // deeper interior levels default to 12
+  const ROOT_BEAM = 24;
+  let searchTimedOut = false;
 
   // At the deepest level only consider the player's two largest remaining
   // building sizes — keeps the leaf fan-out affordable.
@@ -338,7 +382,11 @@ const ENGINE = (() => {
       const sc = score(s);
       return 1000 * (sc[other(me)] - sc[me]);
     }
-    if (depth === 0 || Date.now() > deadline) return posEval(s, me);
+    if (depth === 0) return posEval(s, me);
+    if (Date.now() > deadline) {
+      searchTimedOut = true;
+      return posEval(s, me);
+    }
     const player = s.turn;
     let moves = legalMoves(s, player);
     if (depth === 1) moves = restrictToBigShapes(s, player, moves);
@@ -351,13 +399,14 @@ const ENGINE = (() => {
       const s2 = cloneState(s);
       const ev = place(s2, m.id, m.rot, m.col, m.row);
       const key = moveGain(ev, m.id) +
-                  1.5 * (usableSpace(s2, player) - usableSpace(s2, other(player)));
+                  1.5 * (usableSpace(s2, player) - usableSpace(s2, other(player))) +
+                  1.2 * influence(s2, player);
       return { s2, key };
     });
     kids.sort((a, b) => b.key - a.key);
     const maximizing = player === me;
     let best = maximizing ? -Infinity : Infinity;
-    for (const kid of kids.slice(0, BEAM[depth] || 8)) {
+    for (const kid of kids.slice(0, BEAM[depth] || 12)) {
       const v = search(kid.s2, depth - 1, me, alpha, beta, deadline);
       if (maximizing) {
         if (v > best) best = v;
@@ -394,34 +443,48 @@ const ENGINE = (() => {
     if (s.phase === 'cathedral') return chooseCathedral(s, rng);
     const moves = legalMoves(s, me);
     if (!moves.length) return null;
-    const deadline = Date.now() + (timeBudgetMs || 2000);
+    const deadline = Date.now() + (timeBudgetMs || 2500);
     // order root children by tactical gain + positional delta
     const kids = moves.map(m => {
       const s2 = cloneState(s);
       const ev = place(s2, m.id, m.rot, m.col, m.row);
       const key = moveGain(ev, m.id) +
-                  1.5 * (usableSpace(s2, me) - usableSpace(s2, other(me)));
+                  1.5 * (usableSpace(s2, me) - usableSpace(s2, other(me))) +
+                  1.2 * influence(s2, me);
       return { m, s2, key };
     });
     kids.sort((a, b) => b.key - a.key);
-    const rootPass = depth => {
-      let best = null, bestV = -Infinity, alpha = -Infinity;
+    // Iterative deepening: search ever deeper while the budget lasts,
+    // re-ordering root moves by each completed pass. Only completed
+    // passes are trusted (a truncated deep pass returns junk bounds).
+    let best = kids[0].m;
+    let lastPassMs = 0;
+    for (let depth = 2; depth <= 10; depth++) {
+      const remaining = deadline - Date.now();
+      if (remaining < lastPassMs * 1.2 + 50) break;   // try deeper; truncation is harmless
+      const t0 = Date.now();
+      searchTimedOut = false;
+      let passBest = null, passBestV = -Infinity, alpha = -Infinity;
       for (const kid of kids.slice(0, ROOT_BEAM)) {
         const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * 0.3;
-        if (v > bestV) {
-          bestV = v;
-          best = kid.m;
+        kid.v = v;
+        if (v > passBestV) {
+          passBestV = v;
+          passBest = kid.m;
         }
         if (v > alpha) alpha = v;
-        if (Date.now() > deadline) break;
+        if (Date.now() > deadline) {
+          searchTimedOut = true;
+          break;
+        }
       }
-      return best;
-    };
-    const t0 = Date.now();
-    let best = rootPass(2);                       // 3 half-moves + eval
-    // plenty of time left? deepen to 4 half-moves
-    if (Date.now() - t0 < (deadline - Date.now()) / 2 && moves.length < 400) {
-      best = rootPass(3) || best;
+      if (searchTimedOut) {
+        if (depth === 2 && passBest) best = passBest;   // better than ordering alone
+        break;
+      }
+      best = passBest;
+      kids.sort((a, b) => (b.v ?? -Infinity) - (a.v ?? -Infinity));
+      lastPassMs = Date.now() - t0;
     }
     return best;
   }

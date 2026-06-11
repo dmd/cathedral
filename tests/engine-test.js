@@ -164,7 +164,7 @@ function freshPlay(cathSpot) {
         continue;
       }
       const t0 = Date.now();
-      const m = E.chooseMove(s, me, rng);
+      const m = E.chooseMove(s, me, rng, 250);   // small budget keeps the soak fast
       maxMs = Math.max(maxMs, Date.now() - t0);
       if (!m) { E.pass(s); continue; }
       const ev = E.place(s, m.id, m.rot, m.col, m.row);
