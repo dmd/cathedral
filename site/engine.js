@@ -351,24 +351,6 @@ const ENGINE = (() => {
     return g;
   }
 
-  // Cheap ordering key for interior search nodes: tactical gain plus a small
-  // locality bonus for building against enemy walls and the board edge (the
-  // moves that wall regions off). The full flood-fill/BFS positional key is
-  // far too slow to compute for every child — it's reserved for the root.
-  function quickKey(s2, player, m, ev) {
-    const opp = other(player);
-    let touch = 0;
-    for (const [i, j] of CELLS[m.id][m.rot]) {
-      const c = m.col + i, r = m.row + j;
-      if (c === 0 || c === N - 1) touch++;
-      if (r === 0 || r === N - 1) touch++;
-      if (c + 1 < N) { const t = s2.grid[r * N + c + 1]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
-      if (c - 1 >= 0) { const t = s2.grid[r * N + c - 1]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
-      if (r + 1 < N) { const t = s2.grid[(r + 1) * N + c]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
-      if (r - 1 >= 0) { const t = s2.grid[(r - 1) * N + c]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
-    }
-    return moveGain(ev, m.id) + 0.4 * touch;
-  }
 
   // Multi-source BFS distance from a player's placed buildings through
   // cells the player could still occupy (empty, not enemy territory).
@@ -493,26 +475,16 @@ const ENGINE = (() => {
     const kids = moves.map(m => {
       const s2 = cloneState(s);
       const ev = place(s2, m.id, m.rot, m.col, m.row);
-      return { s2, key: quickKey(s2, player, m, ev) };
+      const key = moveGain(ev, m.id) +
+                  1.5 * (usableSpace(s2, player) - usableSpace(s2, other(player))) +
+                  1.2 * influence(s2, player);
+      return { s2, key };
     });
     kids.sort((a, b) => b.key - a.key);
     const maximizing = player === me;
     let best = maximizing ? -Infinity : Infinity;
     const beamW = narrow ? kids.length : (BEAM[depth] || 12);
-    let pick = kids;
-    if (!narrow && kids.length > beamW) {
-      // two-stage beam: the cheap key preselects 3x the beam, then the
-      // expensive positional key (too slow for every child) re-ranks that
-      // shortlist to choose which subtrees actually get searched
-      pick = kids.slice(0, Math.min(kids.length, beamW * 3));
-      const opp = other(player);
-      for (const kid of pick) {
-        kid.key += 1.5 * (usableSpace(kid.s2, player) - usableSpace(kid.s2, opp)) +
-                   1.2 * influence(kid.s2, player);
-      }
-      pick.sort((a, b) => b.key - a.key);
-    }
-    for (const kid of pick.slice(0, beamW)) {
+    for (const kid of kids.slice(0, beamW)) {
       const v = search(kid.s2, depth - 1, me, alpha, beta, deadline);
       if (maximizing) {
         if (v > best) best = v;
