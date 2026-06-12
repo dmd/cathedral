@@ -872,19 +872,24 @@ function enterGameScreen() {
   turnsound.load();
 }
 
-// Names travel inside the wire protocol and pair players by exact string
-// match, so keep them predictable on every path (typing, URL, submit):
-// uppercase alphanumeric plus spaces. liveName runs as the user types
-// (interior spaces must survive); cleanName additionally trims the ends
-// and collapses doubles, which would otherwise mismatch invisibly.
-const liveName = s => s.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 20);
-const cleanName = s => liveName(s).trim().replace(/ +/g, ' ');
+// Names pair players by exact string match inside the wire protocol.
+// Rather than restricting what people may type, canonicalize whatever they
+// enter — identically on both ends, so two friends typing the "same" name
+// always match: uppercase, drop everything but letters/digits/spaces,
+// collapse runs of spaces, trim.
+const cleanName = s => s.toUpperCase().replace(/[^A-Z0-9 ]/g, '')
+                        .replace(/ +/g, ' ').trim().slice(0, 20);
 
 function startGame() {
   if (inGame) return;
   mode = 'net';
-  origin = cleanName(document.getElementById('namefield').value);
-  target = cleanName(document.getElementById('oppfield').value);
+  const nameField = document.getElementById('namefield');
+  const oppField = document.getElementById('oppfield');
+  origin = cleanName(nameField.value);
+  target = cleanName(oppField.value);
+  // show the canonical names actually used for matching
+  nameField.value = origin;
+  oppField.value = target;
   const chk = document.getElementById('ruleschk').checked;
   rulesWanted = chk && !!origin && !!target && origin !== target;
   enterGameScreen();
@@ -934,13 +939,8 @@ document.getElementById('intro').addEventListener('touchend', e => {
   if (!e.target.closest('input, label, a')) e.preventDefault();
 }, { passive: false });
 for (const id of ['namefield', 'oppfield']) {
-  const field = document.getElementById(id);
-  field.addEventListener('keyup', e => {
+  document.getElementById(id).addEventListener('keyup', e => {
     if (e.code === 'Enter') startGame();
-  });
-  field.addEventListener('input', () => {
-    const clean = liveName(field.value);
-    if (field.value !== clean) field.value = clean;
   });
 }
 
