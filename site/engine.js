@@ -581,8 +581,13 @@ const ENGINE = (() => {
     return best;
   }
 
-  function chooseMove(s, me, rng, timeBudgetMs) {
+  // `noise` adds a random bonus of up to that many eval points to each root
+  // move (one territory cell is worth 8). The default 0.3 only breaks ties;
+  // larger values make the computer beatable: it starts preferring its
+  // second- and third-best moves, like human inaccuracy.
+  function chooseMove(s, me, rng, timeBudgetMs, noise) {
     rng = rng || Math.random;
+    noise = noise ?? 0.3;
     if (s.phase === 'cathedral') return chooseCathedral(s, rng);
     let moves = legalMoves(s, me);
     if (!moves.length) return null;
@@ -659,7 +664,7 @@ const ENGINE = (() => {
       searchTimedOut = false;
       let passBest = null, passBestV = -Infinity, alpha = -Infinity;
       for (const kid of rootKids) {
-        const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * 0.3;
+        const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * noise;
         if (searchTimedOut) break;     // v is junk: a leaf in this subtree was cut short
         kid.v = v;
         if (v > passBestV) {

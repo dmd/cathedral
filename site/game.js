@@ -402,10 +402,25 @@ function handleMessage(text) {
 
 // ---------- vs. computer ----------
 
-const HUMAN = 1;   // green, left side
-const COMP = 2;    // red, right side
+const HUMAN = 1;   // blue, left side
+const COMP = 2;    // vermillion, right side
 let ai = null;     // ENGINE state
 let aiGameNum = 0; // cathedral-placing duty alternates between games
+
+// Difficulty: think time plus eval noise. Noise is what makes the low
+// levels beatable — with a tiny budget alone the computer still plays a
+// strong greedy move, but noise makes it prefer its 2nd/3rd-best moves.
+const LEVELS = {
+  easy:   { budget: 400,  noise: 60 },
+  medium: { budget: 1500, noise: 12 },
+  hard:   { budget: 4000, noise: 0.3 },   // 0.3 only breaks eval ties
+};
+const LEVEL_ORDER = ['easy', 'medium', 'hard'];
+let level = 'hard';
+try {
+  const saved = localStorage.getItem('cathedral-level');
+  if (saved in LEVELS) level = saved;
+} catch {}
 
 function aiDraggable(id) {
   if (!ai || ai.phase === 'over' || ai.turn !== HUMAN) return false;
@@ -595,7 +610,8 @@ function computerMove() {
     return;
   }
   const placingCathedral = ai.phase === 'cathedral';
-  const m = ENGINE.chooseMove(ai, COMP, null, 4000);
+  const d = LEVELS[level];
+  const m = ENGINE.chooseMove(ai, COMP, null, d.budget, d.noise);
   const ev = ENGINE.place(ai, m.id, m.rot, m.col, m.row);
   const p = state[m.id];
   p.x = BOARD_X + m.col * GRID;
@@ -816,6 +832,21 @@ onTap(muteBtn, () => {
   renderMute();
 });
 renderMute();
+
+// difficulty: tap to cycle, remembered across games; applies from the
+// computer's next move
+const levelBtn = document.getElementById('levelbtn');
+
+function renderLevel() {
+  levelBtn.querySelector('.lbl').textContent = level;
+}
+
+onTap(levelBtn, () => {
+  level = LEVEL_ORDER[(LEVEL_ORDER.indexOf(level) + 1) % LEVEL_ORDER.length];
+  try { localStorage.setItem('cathedral-level', level); } catch {}
+  renderLevel();
+});
+renderLevel();
 
 // ---------- status ----------
 
