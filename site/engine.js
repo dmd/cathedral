@@ -550,6 +550,33 @@ const ENGINE = (() => {
     });
     if (outside.length) moves = outside;
     const deadline = Date.now() + (timeBudgetMs || 2500);
+    // Find the opponent's best immediate enclosure/capture as if it were
+    // their turn. Moves that contest those cells are the defenses — and
+    // they score terribly on every ordering heuristic (no claims, negative
+    // influence), so without help the root beam would never search them.
+    const threat = new Int8Array(N * N);
+    let threatGain = 0;
+    {
+      const oppMoves = legalMoves(s, other(me));
+      let bestEv = null, bestOm = null;
+      for (const om of oppMoves) {
+        const s2 = cloneState(s);
+        s2.turn = other(me);
+        const ev = place(s2, om.id, om.rot, om.col, om.row);
+        const gain = 8.0 * ev.claimedCells.length + 7.0 * capturedSquares(ev) +
+                     (ev.cathedralCaptured ? 25 : 0);
+        if (gain > threatGain) {
+          threatGain = gain;
+          bestEv = ev;
+          bestOm = om;
+        }
+      }
+      if (threatGain >= 24 && bestEv) {       // a claim worth ~3+ squares
+        for (const k of bestEv.claimedCells) threat[k] = 1;
+        const base = bestOm.row * N + bestOm.col;
+        for (const off of WIN[bestOm.id][bestOm.rot].offs) threat[base + off] = 1;
+      }
+    }
     // order root children by tactical gain + positional delta
     const kids = moves.map(m => {
       const s2 = cloneState(s);
@@ -557,7 +584,10 @@ const ENGINE = (() => {
       const key = moveGain(ev, m.id) +
                   1.5 * (usableSpace(s2, me) - usableSpace(s2, other(me))) +
                   1.2 * influence(s2, me);
-      return { m, s2, key };
+      const base = m.row * N + m.col;
+      const defends = threatGain >= 24 &&
+                      WIN[m.id][m.rot].offs.some(off => threat[base + off]);
+      return { m, s2, key, defends };
     });
     kids.sort((a, b) => b.key - a.key);
     // Iterative deepening: search ever deeper while the budget lasts,
@@ -566,13 +596,24 @@ const ENGINE = (() => {
     let best = kids[0].m;
     let lastPassMs = 0;
     const rootWidth = moves.length < 80 ? kids.length : ROOT_BEAM;
+    // the beam plus up to 16 defensive candidates it would have pruned
+    let rootKids = kids.slice(0, rootWidth);
+    if (rootWidth < kids.length) {
+      let extra = 0;
+      for (let i = rootWidth; i < kids.length && extra < 16; i++) {
+        if (kids[i].defends) {
+          rootKids.push(kids[i]);
+          extra++;
+        }
+      }
+    }
     for (let depth = 2; depth <= 30; depth++) {
       const remaining = deadline - Date.now();
       if (remaining < lastPassMs * 1.2 + 50) break;   // try deeper; truncation is harmless
       const t0 = Date.now();
       searchTimedOut = false;
       let passBest = null, passBestV = -Infinity, alpha = -Infinity;
-      for (const kid of kids.slice(0, rootWidth)) {
+      for (const kid of rootKids) {
         const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * 0.3;
         if (searchTimedOut) break;     // v is junk: a leaf in this subtree was cut short
         kid.v = v;
@@ -591,7 +632,7 @@ const ENGINE = (() => {
         break;
       }
       best = passBest;
-      kids.sort((a, b) => (b.v ?? -Infinity) - (a.v ?? -Infinity));
+      rootKids.sort((a, b) => (b.v ?? -Infinity) - (a.v ?? -Infinity));
       lastPassMs = Date.now() - t0;
     }
     return best;
