@@ -436,6 +436,50 @@ const ENGINE = (() => {
     return loss;
   }
 
+  // Quasi-territory: small unclaimed empty regions whose adjacent buildings
+  // all belong to one player (and that don't border the enemy's territory)
+  // are already effectively that player's — an enemy piece played inside is
+  // a lone intruder that gets captured as soon as the corner leaks are
+  // plugged. Crediting them stops the engine from wasting pieces and tempo
+  // formally sealing pockets it already controls.
+  const qtSeen = new Int8Array(N * N);
+  const qtStack = new Int32Array(N * N);
+  function quasiTerr(s, me) {
+    const grid = s.grid, terr = s.terr;
+    qtSeen.fill(0);
+    let diff = 0;
+    for (let start = 0; start < N * N; start++) {
+      if (qtSeen[start] || grid[start] !== -1 || terr[start] !== 0) continue;
+      let sp = 0, size = 0, owners = 0;
+      qtStack[sp++] = start;
+      qtSeen[start] = 1;
+      while (sp > 0) {
+        const k = qtStack[--sp];
+        size++;
+        const c = k % N, r = (k - c) / N;
+        for (const nk of [c + 1 < N ? k + 1 : -1, c - 1 >= 0 ? k - 1 : -1,
+                          r + 1 < N ? k + N : -1, r - 1 >= 0 ? k - N : -1]) {
+          if (nk < 0) continue;
+          const g = grid[nk];
+          if (g === -1) {
+            if (terr[nk] !== 0) {
+              owners |= terr[nk];   // territory bounds the region like a wall
+            } else if (!qtSeen[nk]) {
+              qtSeen[nk] = 1;
+              qtStack[sp++] = nk;
+            }
+          } else if (g > 0) {       // the cathedral never counts as a boundary
+            owners |= OWNER[g];
+          }
+        }
+      }
+      if (size > 10) continue;
+      if (owners === 1) diff += me === 1 ? size : -size;
+      else if (owners === 2) diff += me === 2 ? size : -size;
+    }
+    return diff;
+  }
+
   // Positional evaluation of a board from `me`'s point of view.
   function posEval(s, me) {
     const opp = other(me);
@@ -447,6 +491,7 @@ const ENGINE = (() => {
     }
     const sc = score(s);
     let v = 8.0 * (terrMe - terrOpp) +
+            5.0 * quasiTerr(s, me) +
             3.0 * (sc[opp] - sc[me]) +
             1.5 * (usableSpace(s, me) - usableSpace(s, opp)) +
             1.2 * influence(s, me);
