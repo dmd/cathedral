@@ -182,8 +182,8 @@ html, body {
   width: 25px;
   height: 25px;
 }
-#territory .cell.t1 { background: rgba(0, 102, 0, 0.22); }
-#territory .cell.t2 { background: rgba(153, 0, 0, 0.22); }
+#territory .cell.t1 { background: rgba(0, 114, 178, 0.22); }
+#territory .cell.t2 { background: rgba(213, 94, 0, 0.25); }
 
 .piece {
   position: absolute;
@@ -223,8 +223,8 @@ html, body {
   font: bold 12px Arial, sans-serif;
   pointer-events: none;
 }
-#youlabel  { left: 0;     color: #006600; }
-#complabel { left: 540px; color: #990000; }
+#youlabel  { left: 0;     color: #0072B2; }
+#complabel { left: 540px; color: #D55E00; }
 
 #failnotice {
   position: absolute;
@@ -233,7 +233,7 @@ html, body {
   top: 107px;
   text-align: center;
   font: 12px Arial, sans-serif;
-  color: #990000;
+  color: #D55E00;
   display: none;
   pointer-events: none;
 }
