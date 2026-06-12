@@ -877,7 +877,8 @@ function enterGameScreen() {
 // enter — identically on both ends, so two friends typing the "same" name
 // always match: uppercase, drop everything but letters/digits/spaces,
 // collapse runs of spaces, trim.
-const cleanName = s => s.toUpperCase().replace(/[^A-Z0-9 ]/g, '')
+const cleanName = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                        .toUpperCase().replace(/[^A-Z0-9 ]/g, '')
                         .replace(/ +/g, ' ').trim().slice(0, 20);
 
 function startGame() {
