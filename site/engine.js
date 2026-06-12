@@ -394,26 +394,46 @@ const ENGINE = (() => {
     return diff;
   }
 
-  // Squares of remaining buildings that no longer fit anywhere — as good as
-  // lost for the final score.
-  function deadSquares(s, player) {
-    let dead = 0;
-    const seenShapes = new Set();
+  // Squares of remaining buildings lost to the endgame packing contest:
+  // greedily pack the player's pieces largest-first into the space still
+  // open to them and count what doesn't fit. Unlike a per-piece dead check,
+  // this sees the player's own pieces competing for the same room.
+  const pkBlocked = new Int8Array(N * N);
+  function packLoss(s, player) {
+    const opp = other(player);
+    for (let k = 0; k < N * N; k++) {
+      pkBlocked[k] = s.grid[k] !== -1 || s.terr[k] === opp ? 1 : 0;
+    }
+    const mine = [];
     for (const id of s.hand) {
-      if (id === 0 || ownerOf(id) !== player) continue;
-      const shape = PIECES[id].shape;
-      if (seenShapes.has(shape)) continue;
-      seenShapes.add(shape);
-      if (!shapePlacements(s, player, id, null)) {
-        // count every remaining copy of this shape
-        for (const id2 of s.hand) {
-          if (id2 !== 0 && ownerOf(id2) === player && PIECES[id2].shape === shape) {
-            dead += sizeOf(id2);
+      if (id !== 0 && ownerOf(id) === player) mine.push(id);
+    }
+    mine.sort((a, b) => SIZE[b] - SIZE[a]);
+    let loss = 0;
+    for (const id of mine) {
+      let fitted = false;
+      fit:
+      for (const rot of distinctRots[id]) {
+        const w = WIN[id][rot], offs = w.offs;
+        for (let row = w.r0; row <= w.r1; row++) {
+          const rbase = row * N;
+          for (let col = w.c0; col <= w.c1; col++) {
+            const base = rbase + col;
+            let ok = true;
+            for (let x = 0; x < offs.length; x++) {
+              if (pkBlocked[base + offs[x]]) { ok = false; break; }
+            }
+            if (ok) {
+              for (let x = 0; x < offs.length; x++) pkBlocked[base + offs[x]] = 1;
+              fitted = true;
+              break fit;
+            }
           }
         }
       }
+      if (!fitted) loss += SIZE[id];
     }
-    return dead;
+    return loss;
   }
 
   // Positional evaluation of a board from `me`'s point of view.
@@ -430,10 +450,10 @@ const ENGINE = (() => {
             3.0 * (sc[opp] - sc[me]) +
             1.5 * (usableSpace(s, me) - usableSpace(s, opp)) +
             1.2 * influence(s, me);
-    // late game is a packing contest: buildings that can no longer fit
-    // anywhere are lost points
+    // late game is a packing contest: buildings that won't fit into the
+    // remaining space are lost points
     if (empty <= 45) {
-      v += 3.0 * (deadSquares(s, opp) - deadSquares(s, me));
+      v += 3.0 * (packLoss(s, opp) - packLoss(s, me));
     }
     return v;
   }
