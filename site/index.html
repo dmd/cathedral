@@ -22,28 +22,36 @@
         <a id="howto" href="rules.html" target="_blank" rel="noopener">How to Play</a>
         <a id="wikilink" href="https://en.wikipedia.org/wiki/Cathedral_(board_game)" target="_blank" rel="noopener">about the game</a>
       </nav>
-      <div class="introform">
-        <label class="introrow"><span>Name:</span>
-          <input id="namefield" autocomplete="off" maxlength="20" spellcheck="false"></label>
-        <label class="introrow"><span>Opponent:</span>
-          <input id="oppfield" autocomplete="off" maxlength="20" spellcheck="false"></label>
-        <label id="ruleslabel"><input type="checkbox" id="ruleschk" checked> enforce the rules</label>
-      </div>
-      <div id="introbtns">
-        <div id="playbtn" role="button" tabindex="0">
-          <span class="dot"><svg width="20" height="21" viewBox="0 0 12.9 13.75">
-            <path d="M3.3 3.2 L3.3 0 12.9 6.8 3.3 13.75 3.3 10.4 0 10.35 0 3.2 3.3 3.2" fill="#ffffff"/>
-          </svg></span><span class="lbl">play online</span>
+      <div id="intromodes">
+        <div class="mode" id="netmode">
+          <div class="introform">
+            <label class="introrow"><span>Name:</span>
+              <input id="namefield" autocomplete="off" maxlength="20" spellcheck="false"></label>
+            <label class="introrow"><span>Opponent:</span>
+              <input id="oppfield" autocomplete="off" maxlength="20" spellcheck="false"></label>
+            <label id="ruleslabel"><input type="checkbox" id="ruleschk" checked> enforce the rules</label>
+          </div>
+          <div id="playbtn" role="button" tabindex="0">
+            <span class="dot"><svg width="20" height="21" viewBox="0 0 12.9 13.75">
+              <path d="M3.3 3.2 L3.3 0 12.9 6.8 3.3 13.75 3.3 10.4 0 10.35 0 3.2 3.3 3.2" fill="#ffffff"/>
+            </svg></span><span class="lbl">play a friend</span>
+          </div>
+          <p id="nethelp">You and your friend must both open this page and enter
+            matching names &mdash; their name as your opponent, yours as theirs
+            &mdash; then each press play.</p>
         </div>
-        <div id="aibtn" role="button" tabindex="0">
-          <span class="dot"><svg width="20" height="20" viewBox="0 0 12 12">
-            <circle cx="6" cy="1.2" r="1" fill="#fff"/>
-            <rect x="5.6" y="1.5" width="0.8" height="2" fill="#fff"/>
-            <rect x="1" y="3.5" width="10" height="7.5" rx="1.5" fill="#fff"/>
-            <circle cx="4.2" cy="6.6" r="1.1" fill="#333"/>
-            <circle cx="7.8" cy="6.6" r="1.1" fill="#333"/>
-            <rect x="3.5" y="8.8" width="5" height="1" rx="0.5" fill="#333"/>
-          </svg></span><span class="lbl">play vs. computer</span>
+        <div class="modesep" role="separator"></div>
+        <div class="mode" id="aimode">
+          <div id="aibtn" role="button" tabindex="0">
+            <span class="dot"><svg width="20" height="20" viewBox="0 0 12 12">
+              <circle cx="6" cy="1.2" r="1" fill="#fff"/>
+              <rect x="5.6" y="1.5" width="0.8" height="2" fill="#fff"/>
+              <rect x="1" y="3.5" width="10" height="7.5" rx="1.5" fill="#fff"/>
+              <circle cx="4.2" cy="6.6" r="1.1" fill="#333"/>
+              <circle cx="7.8" cy="6.6" r="1.1" fill="#333"/>
+              <rect x="3.5" y="8.8" width="5" height="1" rx="0.5" fill="#333"/>
+            </svg></span><span class="lbl">play vs. computer</span>
+          </div>
         </div>
       </div>
     </div>

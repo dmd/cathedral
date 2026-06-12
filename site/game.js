@@ -872,11 +872,19 @@ function enterGameScreen() {
   turnsound.load();
 }
 
+// Names travel inside the wire protocol and pair players by exact string
+// match, so keep them predictable on every path (typing, URL, submit):
+// uppercase alphanumeric plus spaces. liveName runs as the user types
+// (interior spaces must survive); cleanName additionally trims the ends
+// and collapses doubles, which would otherwise mismatch invisibly.
+const liveName = s => s.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 20);
+const cleanName = s => liveName(s).trim().replace(/ +/g, ' ');
+
 function startGame() {
   if (inGame) return;
   mode = 'net';
-  origin = document.getElementById('namefield').value.trim().toUpperCase();
-  target = document.getElementById('oppfield').value.trim().toUpperCase();
+  origin = cleanName(document.getElementById('namefield').value);
+  target = cleanName(document.getElementById('oppfield').value);
   const chk = document.getElementById('ruleschk').checked;
   rulesWanted = chk && !!origin && !!target && origin !== target;
   enterGameScreen();
@@ -926,14 +934,19 @@ document.getElementById('intro').addEventListener('touchend', e => {
   if (!e.target.closest('input, label, a')) e.preventDefault();
 }, { passive: false });
 for (const id of ['namefield', 'oppfield']) {
-  document.getElementById(id).addEventListener('keyup', e => {
+  const field = document.getElementById(id);
+  field.addEventListener('keyup', e => {
     if (e.code === 'Enter') startGame();
+  });
+  field.addEventListener('input', () => {
+    const clean = liveName(field.value);
+    if (field.value !== clean) field.value = clean;
   });
 }
 
 const params = new URLSearchParams(location.search);
-if (params.get('name')) document.getElementById('namefield').value = params.get('name');
-if (params.get('opp')) document.getElementById('oppfield').value = params.get('opp');
+if (params.get('name')) document.getElementById('namefield').value = cleanName(params.get('name'));
+if (params.get('opp')) document.getElementById('oppfield').value = cleanName(params.get('opp'));
 
 // ---------- scale stage to fit window ----------
 
