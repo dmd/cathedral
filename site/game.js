@@ -595,7 +595,7 @@ function computerMove() {
     return;
   }
   const placingCathedral = ai.phase === 'cathedral';
-  const m = ENGINE.chooseMove(ai, COMP);
+  const m = ENGINE.chooseMove(ai, COMP, null, 4000);
   const ev = ENGINE.place(ai, m.id, m.rot, m.col, m.row);
   const p = state[m.id];
   p.x = BOARD_X + m.col * GRID;
