@@ -27,8 +27,6 @@ const ENGINE = (() => {
 
   const ownerOf = id => id === 0 ? 0 : (id < 15 ? 2 : 1);
   const other = p => p === 1 ? 2 : 1;
-  const footOf = id => FOOT[String(PIECES[id].shape)];
-  const sizeOf = id => footOf(id).length;
 
   function rotCell(i, j, rot) {
     switch (((rot % 360) + 360) % 360) {
@@ -39,8 +37,42 @@ const ENGINE = (() => {
     }
   }
 
+  // Precomputed per (id, rot): footprint cells, grid offsets, and the
+  // col/row window where the whole piece stays on the board. Everything in
+  // the search inner loops reads these instead of recomputing rotations.
+  const SIZE = [];      // id -> cell count
+  const CELLS = [];     // id -> rot -> [[i,j], ...]
+  const WIN = [];       // id -> rot -> {offs, c0, c1, r0, r1}
+  for (const p of PIECES) {
+    const foot = FOOT[String(p.shape)];
+    SIZE[p.id] = foot.length;
+    CELLS[p.id] = {};
+    WIN[p.id] = {};
+    for (const r of [0, 90, 180, 270]) {
+      const cells = foot.map(([i, j]) => rotCell(i, j, r));
+      let minI = 9, maxI = -9, minJ = 9, maxJ = -9;
+      for (const [i, j] of cells) {
+        if (i < minI) minI = i;
+        if (i > maxI) maxI = i;
+        if (j < minJ) minJ = j;
+        if (j > maxJ) maxJ = j;
+      }
+      CELLS[p.id][r] = cells;
+      WIN[p.id][r] = {
+        offs: cells.map(([i, j]) => j * N + i),
+        c0: -minI, c1: N - 1 - maxI,
+        r0: -minJ, r1: N - 1 - maxJ,
+      };
+    }
+  }
+
+  const sizeOf = id => SIZE[id];
+
+  const OWNER = new Int8Array(29);          // id -> owning player (0 = cathedral)
+  for (const p of PIECES) OWNER[p.id] = ownerOf(p.id);
+
   function cellsFor(id, rot) {
-    return footOf(id).map(([i, j]) => rotCell(i, j, rot));
+    return CELLS[id][((rot % 360) + 360) % 360];
   }
 
   // Distinct rotations per piece (symmetric shapes have fewer than 4).
@@ -79,7 +111,7 @@ const ENGINE = (() => {
     return {
       grid: s.grid.slice(),
       terr: s.terr.slice(),
-      placed: Object.fromEntries(Object.entries(s.placed).map(([k, v]) => [k, { ...v }])),
+      placed: { ...s.placed },   // values are never mutated in place, only replaced
       hand: s.hand.slice(),
       cathedralGone: s.cathedralGone,
       firstBuildDone: { ...s.firstBuildDone },
@@ -93,55 +125,88 @@ const ENGINE = (() => {
     if (s.phase === 'over') return false;
     if (!s.hand.includes(id)) return false;
     if (s.phase === 'cathedral' ? id !== 0 : ownerOf(id) !== player) return false;
-    const opp = other(player);
-    for (const [i, j] of cellsFor(id, rot)) {
-      const c = col + i, r = row + j;
-      if (c < 0 || c >= N || r < 0 || r >= N) return false;
-      const k = r * N + c;
-      if (s.grid[k] !== -1) return false;
-      if (s.terr[k] === opp) return false;
+    const w = WIN[id][((rot % 360) + 360) % 360];
+    if (col < w.c0 || col > w.c1 || row < w.r0 || row > w.r1) return false;
+    const opp = other(player), base = row * N + col;
+    for (const off of w.offs) {
+      const k = base + off;
+      if (s.grid[k] !== -1 || s.terr[k] === opp) return false;
     }
     return true;
   }
 
+  // Hot-loop placement test: assumes id is in hand, owned by `player`, and
+  // rot is one of distinctRots[id]. Appends every legal placement to `out`,
+  // or returns true at the first one when `out` is null.
+  function shapePlacements(s, player, id, out) {
+    const opp = other(player);
+    const grid = s.grid, terr = s.terr;
+    for (const rot of distinctRots[id]) {
+      const w = WIN[id][rot], offs = w.offs;
+      for (let row = w.r0; row <= w.r1; row++) {
+        const rbase = row * N;
+        for (let col = w.c0; col <= w.c1; col++) {
+          const base = rbase + col;
+          let ok = true;
+          for (let x = 0; x < offs.length; x++) {
+            const k = base + offs[x];
+            if (grid[k] !== -1 || terr[k] === opp) { ok = false; break; }
+          }
+          if (ok) {
+            if (!out) return true;
+            out.push({ id, rot, col, row });
+          }
+        }
+      }
+    }
+    return out ? out.length > 0 : false;
+  }
+
+  // Scratch buffers for computeClaims — module-level to avoid reallocating
+  // on every simulated placement in the search (this is the hottest path).
+  const ccSeen = new Int8Array(N * N);
+  const ccStack = new Int32Array(N * N);
+  const ccComp = new Int32Array(N * N);
+
   // Claim check for `player` after their move. Mutates s; returns events.
   function computeClaims(s, player) {
     const ev = { claimedCells: [], captured: [], cathedralCaptured: false };
-    const isWall = new Array(N * N);
+    const grid = s.grid;
+    // seen doubles as the wall mask: walls are pre-marked as visited
     for (let k = 0; k < N * N; k++) {
-      isWall[k] = s.grid[k] !== -1 && ownerOf(s.grid[k]) === player;
+      const g = grid[k];
+      ccSeen[k] = g > 0 && OWNER[g] === player ? 1 : 0;
     }
-    const seen = new Array(N * N).fill(false);
     for (let start = 0; start < N * N; start++) {
-      if (seen[start] || isWall[start]) continue;
+      if (ccSeen[start]) continue;
       // flood one component (8-connected: corner gaps leak)
-      const comp = [];
-      const stack = [start];
-      seen[start] = true;
-      while (stack.length) {
-        const k = stack.pop();
-        comp.push(k);
+      let compLen = 0, sp = 0;
+      ccStack[sp++] = start;
+      ccSeen[start] = 1;
+      let enemy = -1, enemyCount = 0;
+      while (sp > 0) {
+        const k = ccStack[--sp];
+        ccComp[compLen++] = k;
+        if (grid[k] !== -1 && grid[k] !== enemy) {
+          enemy = grid[k];
+          enemyCount++;
+        }
         const c = k % N, r = (k - c) / N;
-        for (let dc = -1; dc <= 1; dc++) {
-          for (let dr = -1; dr <= 1; dr++) {
-            if (!dc && !dr) continue;
-            const nc = c + dc, nr = r + dr;
-            if (nc < 0 || nc >= N || nr < 0 || nr >= N) continue;
+        const c0 = c > 0 ? c - 1 : 0, c1 = c < N - 1 ? c + 1 : N - 1;
+        const r0 = r > 0 ? r - 1 : 0, r1 = r < N - 1 ? r + 1 : N - 1;
+        for (let nr = r0; nr <= r1; nr++) {
+          for (let nc = c0; nc <= c1; nc++) {
             const nk = nr * N + nc;
-            if (!seen[nk] && !isWall[nk]) {
-              seen[nk] = true;
-              stack.push(nk);
+            if (!ccSeen[nk]) {
+              ccSeen[nk] = 1;
+              ccStack[sp++] = nk;
             }
           }
         }
       }
-      const enemies = new Set();
-      for (const k of comp) {
-        if (s.grid[k] !== -1) enemies.add(s.grid[k]);
-      }
-      if (enemies.size > 1) continue;
-      if (enemies.size === 1) {
-        const id = [...enemies][0];
+      if (enemyCount > 1) continue;
+      if (enemyCount === 1) {
+        const id = enemy;
         // remove it: cathedral is gone for good, buildings go back to hand
         for (let k = 0; k < N * N; k++) {
           if (s.grid[k] === id) s.grid[k] = -1;
@@ -155,9 +220,10 @@ const ENGINE = (() => {
         }
         ev.captured.push(id);
       }
-      for (const k of comp) {
+      for (let x = 0; x < compLen; x++) {
         // claim the whole enclosed space — including any stale enemy
         // territory whose backing wall was just captured
+        const k = ccComp[x];
         if (s.terr[k] !== player) {
           s.terr[k] = player;
           ev.claimedCells.push(k);
@@ -199,13 +265,7 @@ const ENGINE = (() => {
     const moves = [];
     if (s.phase === 'over') return moves;
     if (s.phase === 'cathedral') {
-      for (const rot of distinctRots[0]) {
-        for (let col = 0; col < N; col++) {
-          for (let row = 0; row < N; row++) {
-            if (canPlace(s, player, 0, rot, col, row)) moves.push({ id: 0, rot, col, row });
-          }
-        }
-      }
+      shapePlacements(s, player, 0, moves);
       return moves;
     }
     const seenShapes = new Set();
@@ -214,13 +274,7 @@ const ENGINE = (() => {
       const shape = PIECES[id].shape;
       if (seenShapes.has(shape)) continue;   // identical pieces are interchangeable
       seenShapes.add(shape);
-      for (const rot of distinctRots[id]) {
-        for (let col = 0; col < N; col++) {
-          for (let row = 0; row < N; row++) {
-            if (canPlace(s, player, id, rot, col, row)) moves.push({ id, rot, col, row });
-          }
-        }
-      }
+      shapePlacements(s, player, id, moves);
     }
     return moves;
   }
@@ -234,13 +288,7 @@ const ENGINE = (() => {
       const shape = PIECES[id].shape;
       if (seenShapes.has(shape)) continue;
       seenShapes.add(shape);
-      for (const rot of distinctRots[id]) {
-        for (let col = 0; col < N; col++) {
-          for (let row = 0; row < N; row++) {
-            if (canPlace(s, player, id, rot, col, row)) return true;
-          }
-        }
-      }
+      if (shapePlacements(s, player, id, null)) return true;
     }
     return false;
   }
@@ -303,6 +351,25 @@ const ENGINE = (() => {
     return g;
   }
 
+  // Cheap ordering key for interior search nodes: tactical gain plus a small
+  // locality bonus for building against enemy walls and the board edge (the
+  // moves that wall regions off). The full flood-fill/BFS positional key is
+  // far too slow to compute for every child — it's reserved for the root.
+  function quickKey(s2, player, m, ev) {
+    const opp = other(player);
+    let touch = 0;
+    for (const [i, j] of CELLS[m.id][m.rot]) {
+      const c = m.col + i, r = m.row + j;
+      if (c === 0 || c === N - 1) touch++;
+      if (r === 0 || r === N - 1) touch++;
+      if (c + 1 < N) { const t = s2.grid[r * N + c + 1]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
+      if (c - 1 >= 0) { const t = s2.grid[r * N + c - 1]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
+      if (r + 1 < N) { const t = s2.grid[(r + 1) * N + c]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
+      if (r - 1 >= 0) { const t = s2.grid[(r - 1) * N + c]; if (t > 0 && ownerOf(t) === opp) touch += 2; }
+    }
+    return moveGain(ev, m.id) + 0.4 * touch;
+  }
+
   // Multi-source BFS distance from a player's placed buildings through
   // cells the player could still occupy (empty, not enemy territory).
   function bfsDist(s, player) {
@@ -355,19 +422,7 @@ const ENGINE = (() => {
       const shape = PIECES[id].shape;
       if (seenShapes.has(shape)) continue;
       seenShapes.add(shape);
-      let fits = false;
-      outer:
-      for (const rot of distinctRots[id]) {
-        for (let col = 0; col < N && !fits; col++) {
-          for (let row = 0; row < N; row++) {
-            if (canPlace(s, player, id, rot, col, row)) {
-              fits = true;
-              break outer;
-            }
-          }
-        }
-      }
-      if (!fits) {
+      if (!shapePlacements(s, player, id, null)) {
         // count every remaining copy of this shape
         for (const id2 of s.hand) {
           if (id2 !== 0 && ownerOf(id2) === player && PIECES[id2].shape === shape) {
@@ -438,16 +493,26 @@ const ENGINE = (() => {
     const kids = moves.map(m => {
       const s2 = cloneState(s);
       const ev = place(s2, m.id, m.rot, m.col, m.row);
-      const key = moveGain(ev, m.id) +
-                  1.5 * (usableSpace(s2, player) - usableSpace(s2, other(player))) +
-                  1.2 * influence(s2, player);
-      return { s2, key };
+      return { s2, key: quickKey(s2, player, m, ev) };
     });
     kids.sort((a, b) => b.key - a.key);
     const maximizing = player === me;
     let best = maximizing ? -Infinity : Infinity;
     const beamW = narrow ? kids.length : (BEAM[depth] || 12);
-    for (const kid of kids.slice(0, beamW)) {
+    let pick = kids;
+    if (!narrow && kids.length > beamW) {
+      // two-stage beam: the cheap key preselects 3x the beam, then the
+      // expensive positional key (too slow for every child) re-ranks that
+      // shortlist to choose which subtrees actually get searched
+      pick = kids.slice(0, Math.min(kids.length, beamW * 3));
+      const opp = other(player);
+      for (const kid of pick) {
+        kid.key += 1.5 * (usableSpace(kid.s2, player) - usableSpace(kid.s2, opp)) +
+                   1.2 * influence(kid.s2, player);
+      }
+      pick.sort((a, b) => b.key - a.key);
+    }
+    for (const kid of pick.slice(0, beamW)) {
       const v = search(kid.s2, depth - 1, me, alpha, beta, deadline);
       if (maximizing) {
         if (v > best) best = v;
@@ -509,6 +574,7 @@ const ENGINE = (() => {
       let passBest = null, passBestV = -Infinity, alpha = -Infinity;
       for (const kid of kids.slice(0, rootWidth)) {
         const v = search(kid.s2, depth, me, alpha, Infinity, deadline) + rng() * 0.3;
+        if (searchTimedOut) break;     // v is junk: a leaf in this subtree was cut short
         kid.v = v;
         if (v > passBestV) {
           passBestV = v;
