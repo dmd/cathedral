@@ -268,8 +268,17 @@ document.addEventListener('keyup', e => {
   if (inGame && e.code === 'Space') rotateSelected();
 });
 
+// Buttons activate on pointerup rather than click: touchend is swallowed
+// to kill iOS Safari's double-tap zoom (see startup), which also swallows
+// the synthesized clicks on touch devices.
+function onTap(el, fn) {
+  el.addEventListener('pointerup', e => {
+    if (e.button === 0) fn();
+  });
+}
+
 const rotateBtn = document.getElementById('rotatebtn');
-rotateBtn.addEventListener('click', () => rotateSelected());
+onTap(rotateBtn, rotateSelected);
 rotateBtn.addEventListener('keyup', e => {
   if (e.code === 'Enter') rotateSelected();
 });
@@ -754,7 +763,7 @@ function netCommitFromPeer(p, x, y, rot) {
 
 // ---------- buttons ----------
 
-endturnBtn.addEventListener('click', () => {
+onTap(endturnBtn, () => {
   if (mode === 'ai' || rulesActive) {
     if (pending) commitPending();
     return;
@@ -763,7 +772,7 @@ endturnBtn.addEventListener('click', () => {
   wsSend(`<YOURTURN target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
 });
 
-resetBtn.addEventListener('click', () => {
+onTap(resetBtn, () => {
   if (mode === 'ai') {
     newAIGame();
     return;
@@ -847,15 +856,25 @@ function startAIGame() {
 }
 
 const playBtn = document.getElementById('playbtn');
-playBtn.addEventListener('click', startGame);
+onTap(playBtn, startGame);
 playBtn.addEventListener('keyup', e => {
   if (e.code === 'Enter' || e.code === 'Space') startGame();
 });
 const aiBtn = document.getElementById('aibtn');
-aiBtn.addEventListener('click', startAIGame);
+onTap(aiBtn, startAIGame);
 aiBtn.addEventListener('keyup', e => {
   if (e.code === 'Enter') startAIGame();
 });
+
+// iOS Safari ignores user-scalable=no and double-tap zooms even through
+// touch-action: none (while honoring it for pinch, so there's no zooming
+// back out). Swallow touchend to stop the gesture: everywhere in-game,
+// and on the intro except its form fields and links.
+document.getElementById('game').addEventListener('touchend',
+  e => e.preventDefault(), { passive: false });
+document.getElementById('intro').addEventListener('touchend', e => {
+  if (!e.target.closest('input, label, a')) e.preventDefault();
+}, { passive: false });
 for (const id of ['namefield', 'oppfield']) {
   document.getElementById(id).addEventListener('keyup', e => {
     if (e.code === 'Enter') startGame();
