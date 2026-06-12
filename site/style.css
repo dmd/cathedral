@@ -222,7 +222,7 @@ html, body {
 }
 .piece.dragging path { cursor: grabbing; }
 .piece.locked path { cursor: default; }
-.piece.sel:not(.locked) path { stroke: #ff9900; stroke-width: 2; }
+.piece.sel:not(.locked) path { stroke: #F0E442; stroke-width: 2.5; }
 .piece.moving {
   transition: left 0.35s ease, top 0.35s ease, transform 0.35s ease;
 }
