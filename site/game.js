@@ -933,7 +933,8 @@ if (window.visualViewport) {
   const base = vpMeta.getAttribute('content');
   let resetting = false;
   const pinScale = () => {
-    if (resetting || Math.abs(visualViewport.scale - 1) < 0.02) return;
+    // only fight zoom-in; never inflate a page Safari shrank to fit
+    if (resetting || visualViewport.scale <= 1.02) return;
     resetting = true;
     vpMeta.setAttribute('content', base + ', minimum-scale=1');
     setTimeout(() => {
@@ -944,6 +945,26 @@ if (window.visualViewport) {
   visualViewport.addEventListener('resize', pinScale);
   window.addEventListener('pageshow', () => setTimeout(pinScale, 50));
   setTimeout(pinScale, 300);
+}
+
+// Temporary diagnostics: ?vpdebug=1 overlays live viewport numbers.
+if (params.get('vpdebug') === '1') {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:0;top:0;z-index:9999;background:#000;' +
+    'color:#0f0;font:13px monospace;padding:6px;white-space:pre;pointer-events:none';
+  document.body.appendChild(d);
+  let lastErr = '';
+  window.addEventListener('error', e => { lastErr = e.message; });
+  setInterval(() => {
+    d.textContent =
+      `inner   ${window.innerWidth}x${window.innerHeight}\n` +
+      `doc     ${document.documentElement.scrollWidth}x` +
+              `${document.documentElement.scrollHeight}\n` +
+      `vviewp  ${visualViewport.width.toFixed(0)}x${visualViewport.height.toFixed(0)}` +
+              `  scale ${visualViewport.scale.toFixed(3)}\n` +
+      `screen  ${screen.width}x${screen.height}  dpr ${devicePixelRatio}` +
+      (lastErr ? `\nERR ${lastErr}` : '');
+  }, 250);
 }
 
 buildPieces();
