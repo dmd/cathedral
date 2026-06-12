@@ -150,6 +150,23 @@ function freshPlay(cathSpot) {
   check('G: stale red territory flipped to green', s.terr[9] === 1);
 }
 
+// Scenario H: the AI must not move entirely inside its own territory while
+// moves on open ground exist (territory is banked; such moves waste tempo).
+{
+  const s = freshPlay({ rot: 0, col: 5, row: 6 });
+  E.place(s, 17, 90, 2, 0);          // green stable at (1,0),(1,1)
+  E.place(s, 1, 0, 9, 9);            // red tavern far away
+  E.place(s, 15, 0, 0, 1);           // green tavern closes (0,0) -> green territory
+  E.place(s, 2, 0, 9, 8);            // red move; green to move again
+  check('H: corner is green territory', s.terr[0] === 1);
+  for (let trial = 0; trial < 3; trial++) {
+    const m = E.chooseMove(E.cloneState(s), 1, mkRng(50 + trial), 150);
+    const allInside = E.cellsFor(m.id, m.rot)
+      .every(([i, j]) => s.terr[(m.row + j) * 10 + (m.col + i)] === 1);
+    check(`H: trial ${trial} move not wholly inside own territory`, !allInside);
+  }
+}
+
 // ---------- AI vs AI soak ----------
 {
   let maxMs = 0, totalGames = 12, decisive = 0;

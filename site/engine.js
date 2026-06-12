@@ -539,8 +539,16 @@ const ENGINE = (() => {
   function chooseMove(s, me, rng, timeBudgetMs) {
     rng = rng || Math.random;
     if (s.phase === 'cathedral') return chooseCathedral(s, rng);
-    const moves = legalMoves(s, me);
+    let moves = legalMoves(s, me);
     if (!moves.length) return null;
+    // Never burn a move entirely inside our own territory while open ground
+    // exists: territory is banked (the opponent can never build there), so
+    // such moves can always be made later — contest the open board instead.
+    const outside = moves.filter(m => {
+      const base = m.row * N + m.col;
+      return WIN[m.id][m.rot].offs.some(off => s.terr[base + off] !== me);
+    });
+    if (outside.length) moves = outside;
     const deadline = Date.now() + (timeBudgetMs || 2500);
     // order root children by tactical gain + positional delta
     const kids = moves.map(m => {
