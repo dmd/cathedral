@@ -924,6 +924,28 @@ function rescale() {
 }
 window.addEventListener('resize', rescale);
 
+// iOS Safari remembers a site's pinch-zoom level and reapplies it shortly
+// after load — and since zoom gestures are blocked here, there'd be no way
+// back out. It ignores maximum-scale, but rewriting the viewport meta makes
+// it re-evaluate and snap to 1x, so pin the scale whenever it drifts.
+if (window.visualViewport) {
+  const vpMeta = document.querySelector('meta[name="viewport"]');
+  const base = vpMeta.getAttribute('content');
+  let resetting = false;
+  const pinScale = () => {
+    if (resetting || Math.abs(visualViewport.scale - 1) < 0.02) return;
+    resetting = true;
+    vpMeta.setAttribute('content', base + ', minimum-scale=1');
+    setTimeout(() => {
+      vpMeta.setAttribute('content', base);
+      resetting = false;
+    }, 100);
+  };
+  visualViewport.addEventListener('resize', pinScale);
+  window.addEventListener('pageshow', () => setTimeout(pinScale, 50));
+  setTimeout(pinScale, 300);
+}
+
 buildPieces();
 rescale();
 if (params.get('ai') === '1') {

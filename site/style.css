@@ -8,6 +8,7 @@ html, body {
   touch-action: none;
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 #scaler {
