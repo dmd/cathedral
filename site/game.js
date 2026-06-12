@@ -799,6 +799,24 @@ onTap(resetBtn, () => {
   }
 });
 
+// muted by default; an explicit unmute is remembered
+let muted = true;
+try { muted = localStorage.getItem('cathedral-muted') !== '0'; } catch {}
+const muteBtn = document.getElementById('mutebtn');
+
+function renderMute() {
+  turnsound.muted = muted;
+  muteBtn.classList.toggle('muted', muted);
+  muteBtn.querySelector('.lbl').textContent = muted ? 'unmute' : 'mute';
+}
+
+onTap(muteBtn, () => {
+  muted = !muted;
+  try { localStorage.setItem('cathedral-muted', muted ? '1' : '0'); } catch {}
+  renderMute();
+});
+renderMute();
+
 // ---------- status ----------
 
 function updateStatus() {
