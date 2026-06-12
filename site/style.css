@@ -58,14 +58,7 @@ html, body {
   gap: 14px;
 }
 
-/* the ffdec-exported svg is 250x336: photo on top, a stray rule from the
-   old Flash layout at the bottom — crop to just the photo */
-#introphoto {
-  width: min(55vw, 230px);
-  aspect-ratio: 250 / 195;
-  object-fit: cover;
-  object-position: top;
-}
+#introphoto { width: min(55vw, 230px); height: auto; }
 
 #introtitle {
   font-size: clamp(52px, 14vw, 75px);
