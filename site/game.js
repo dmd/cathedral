@@ -580,7 +580,7 @@ function proceed(prefix) {
   }
   if (ai.turn === COMP) {
     setTimeout(computerMove, 650);
-    msg(pre + 'computer is thinking…');
+    msg(pre + `computer is thinking… (${level})`);
     return;
   }
   // human's turn
@@ -630,8 +630,8 @@ function computerMove() {
 function endAIGame() {
   const sc = ENGINE.score(ai);
   let result;
-  if (sc[HUMAN] < sc[COMP]) result = 'you win!';
-  else if (sc[HUMAN] > sc[COMP]) result = 'the computer wins.';
+  if (sc[HUMAN] < sc[COMP]) result = `you beat the ${level} computer!`;
+  else if (sc[HUMAN] > sc[COMP]) result = `the ${level} computer wins.`;
   else result = "it's a draw.";
   msg(`game over — ${result} press reset for a new game`);
   refreshLocks();
