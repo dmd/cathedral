@@ -836,6 +836,7 @@ function updateStatus() {
 function enterGameScreen() {
   inGame = true;
   document.getElementById('intro').hidden = true;
+  scaler.hidden = false;
   document.getElementById('game').hidden = false;
   turnsound.load();
 }
@@ -927,6 +928,7 @@ buildPieces();
 rescale();
 if (params.get('ai') === '1') {
   startAIGame();
-} else {
+} else if (!matchMedia('(pointer: coarse)').matches) {
+  // focusing on touch devices would pop the keyboard over the intro
   document.getElementById('namefield').focus();
 }

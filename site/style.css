@@ -28,126 +28,111 @@ html, body {
   touch-action: none;
 }
 
-#intro, #game {
+#game {
   position: absolute;
   inset: 0;
 }
 
-/* ---------- intro screen ---------- */
+/* ---------- intro screen (normal responsive flow, not in the stage) ---------- */
 
-#introphoto {
+#intro {
   position: absolute;
-  left: 265px;
-  top: 21px;
-  width: 250px;
+  inset: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  background: #fff;
+  font-family: Garamond, 'Times New Roman', serif;
+  color: #000;
+}
+#intro[hidden] { display: none; }
+
+.introcol {
+  margin: auto;          /* centers; degrades to scrollable when cramped */
+  padding: max(20px, env(safe-area-inset-top)) 24px
+           max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* the ffdec-exported svg is 250x336: photo on top, a stray rule from the
+   old Flash layout at the bottom — crop to just the photo */
+#introphoto {
+  width: min(55vw, 230px);
+  aspect-ratio: 250 / 195;
+  object-fit: cover;
+  object-position: top;
 }
 
 #introtitle {
-  position: absolute;
-  left: 184px;
-  top: 207px;
-  width: 400px;
-  text-align: center;
-  font: 75px Garamond, 'Times New Roman', serif;
-  color: #000;
+  font-size: clamp(52px, 14vw, 75px);
   line-height: 1;
-  pointer-events: none;
 }
 
-#introsub {
-  position: absolute;
-  left: 184px;
-  top: 304px;
-  width: 400px;
-  text-align: center;
-  font: 25px Garamond, 'Times New Roman', serif;
-  color: #000;
-  line-height: 1;
-  pointer-events: none;
-}
+#introsub { font-size: clamp(18px, 5vw, 25px); line-height: 1; }
 
-#howto {
-  position: absolute;
-  left: 273px;
-  top: 338px;
-  width: 234px;
-  text-align: center;
-  font: bold 17px Garamond, 'Times New Roman', serif;
-  color: #191970;
+#introlinks {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
+#howto    { font-size: 17px; font-weight: bold; color: #191970; }
+#wikilink { font-size: 14px; color: #191970; }
 
-#wikilink {
-  position: absolute;
-  left: 273px;
-  top: 362px;
-  width: 234px;
-  text-align: center;
-  font: 14px Garamond, 'Times New Roman', serif;
-  color: #191970;
+.introform {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: min(100%, 340px);
+  margin-top: 6px;
 }
-
-#namelabel, #opplabel {
-  position: absolute;
-  left: 79px;
-  font: 25px Garamond, 'Times New Roman', serif;
-  color: #000;
+.introrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 22px;
 }
-#namelabel { top: 404px; }
-#opplabel  { top: 443px; }
-
-#namefield, #oppfield {
-  position: absolute;
-  left: 208px;
-  width: 128px;
-  height: 26px;
+.introrow span { width: 105px; text-align: right; }
+.introrow input {
+  flex: 1;
+  min-width: 0;
   border: 1px solid #000;
   border-radius: 0;
   background: #fff;
-  font: 25px Garamond, 'Times New Roman', serif;
-  padding: 0 2px;
+  font: 20px Garamond, 'Times New Roman', serif;
+  padding: 6px 8px;
   outline: none;
 }
-#namefield { top: 401px; }
-#oppfield  { top: 439px; }
-
-#playbtn {
-  position: absolute;
-  left: 387px;
-  top: 423px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: #333333;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-#playbtn svg { margin-left: 3px; }
-#playbtn:hover, #playbtn:focus-visible { background: #ff9900; }
 
 #ruleslabel {
-  position: absolute;
-  left: 208px;
-  top: 474px;
-  font: 16px Garamond, 'Times New Roman', serif;
-  color: #000;
+  align-self: center;
+  font-size: 16px;
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
 }
 #ruleslabel input { vertical-align: -2px; }
 
-#aibtn {
-  position: absolute;
-  left: 455px;
-  top: 427px;
+#introbtns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px 32px;
+  margin-top: 8px;
+}
+#playbtn, #aibtn {
+  position: relative;
   display: flex;
   align-items: center;
   cursor: pointer;
 }
-#aibtn .dot {
-  width: 20px;
-  height: 20px;
+#playbtn .dot, #aibtn .dot {
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #333333;
   flex: none;
@@ -155,10 +140,12 @@ html, body {
   align-items: center;
   justify-content: center;
 }
+#playbtn .dot svg { margin-left: 3px; }
+#playbtn:hover .dot, #playbtn:focus-visible .dot,
 #aibtn:hover .dot, #aibtn:focus-visible .dot { background: #ff9900; }
-#aibtn .lbl {
-  margin-left: 6px;
-  font: 14px Helvetica, Arial, sans-serif;
+#playbtn .lbl, #aibtn .lbl {
+  margin-left: 8px;
+  font: 16px Helvetica, Arial, sans-serif;
   color: #000;
 }
 
