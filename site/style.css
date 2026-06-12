@@ -5,6 +5,9 @@ html, body {
   margin: 0;
   background: #ffffff;
   overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 #scaler {
@@ -22,6 +25,7 @@ html, body {
   font-family: Arial, Helvetica, sans-serif;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 }
 
 #intro, #game {
@@ -212,6 +216,7 @@ html, body {
 }
 .piece.dragging path { cursor: grabbing; }
 .piece.locked path { cursor: default; }
+.piece.sel:not(.locked) { filter: drop-shadow(0 0 2.5px #ff9900); }
 .piece.moving {
   transition: left 0.35s ease, top 0.35s ease, transform 0.35s ease;
 }
@@ -252,16 +257,19 @@ html, body {
   pointer-events: none;
 }
 
-#endturn, #resetbtn {
+#endturn, #resetbtn, #rotatebtn {
   position: absolute;
   display: flex;
   align-items: center;
   cursor: pointer;
 }
-#endturn  { left: 337px; top: 396px; }
-#resetbtn { left: 25px;  top: 450px; }
+/* rotate gets the handy spot under the board; end turn (the irreversible
+   confirm) lives far away, bottom-right, so it can't be hit by mistake */
+#rotatebtn { left: 337px; top: 396px; }
+#endturn   { left: 580px; top: 450px; }
+#resetbtn  { left: 25px;  top: 450px; }
 
-#endturn .dot, #resetbtn .dot {
+#endturn .dot, #resetbtn .dot, #rotatebtn .dot {
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -273,19 +281,29 @@ html, body {
   color: #fff;
   font: bold 13px Arial, sans-serif;
 }
-#resetbtn .dot { font-size: 15px; }
+#resetbtn .dot, #rotatebtn .dot { font-size: 15px; }
 #endturn.confirm:not(.disabled) .dot { background: #ff9900; }
-#endturn:hover .dot, #resetbtn:hover .dot { background: #ff9900; }
-#endturn:active .dot, #resetbtn:active .dot { background: #ff9900; }
+#endturn:hover .dot, #resetbtn:hover .dot, #rotatebtn:hover .dot { background: #ff9900; }
+#endturn:active .dot, #resetbtn:active .dot, #rotatebtn:active .dot { background: #ff9900; }
 
-#endturn .lbl, #resetbtn .lbl {
+#endturn .lbl, #resetbtn .lbl, #rotatebtn .lbl {
   margin-left: 6px;
   font: 14px Helvetica, Arial, sans-serif;
   color: #000;
 }
 #resetbtn .lbl { color: #cccccc; }
 #resetbtn:hover .lbl { color: #000; }
-#endturn:active .lbl, #resetbtn:active .lbl { color: #ff9900; }
+#endturn:active .lbl, #resetbtn:active .lbl, #rotatebtn:active .lbl { color: #ff9900; }
+
+/* bigger tap targets on touch devices (invisible hit-area extension) */
+@media (pointer: coarse) {
+  #playbtn::after, #aibtn::after,
+  #endturn::after, #resetbtn::after, #rotatebtn::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+}
 
 #endturn.dim { opacity: 0.05; }
 #endturn.disabled { opacity: 0.35; cursor: default; }

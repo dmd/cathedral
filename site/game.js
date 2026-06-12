@@ -125,30 +125,39 @@ function buildPieces() {
 
 function stagePoint(e) {
   const r = stage.getBoundingClientRect();
+  if (rotatedView) {  // stage is rotated 90° to fill portrait screens
+    return {
+      x: (e.clientY - r.top) * STAGE_W / r.height,
+      y: (r.right - e.clientX) * STAGE_H / r.width,
+    };
+  }
   return {
     x: (e.clientX - r.left) * STAGE_W / r.width,
     y: (e.clientY - r.top) * STAGE_H / r.height,
   };
 }
 
+const lastTap = { id: -1, t: 0 };
+
 function startDrag(e, id) {
   if (mode === 'ai' && !aiDraggable(id)) return;
   if (mode === 'net' && rulesActive && !netDraggable(id)) return;
   e.preventDefault();
   const p = state[id];
-  selected = id;
+  setSelected(id);
   p.dragFrom = { x: p.x, y: p.y, rot: p.rot };
   p.el.style.zIndex = ++zTop;
   p.el.classList.add('dragging');
   const at = stagePoint(e);
-  const grabX = at.x - p.x;
-  const grabY = at.y - p.y;
+  p.grabX = at.x - p.x;     // on the piece so mid-drag rotation can re-anchor
+  p.grabY = at.y - p.y;
+  const t0 = performance.now();
   let lastSent = 0;
 
   const move = ev => {
     const m = stagePoint(ev);
-    p.x = m.x - grabX;
-    p.y = m.y - grabY;
+    p.x = m.x - p.grabX;
+    p.y = m.y - p.grabY;
     positionPiece(p);
     if (mode === 'net') {
       const now = performance.now();
@@ -158,11 +167,12 @@ function startDrag(e, id) {
       }
     }
   };
-  const up = () => {
+  const finish = cancelled => {
     p.el.classList.remove('dragging');
     p.el.removeEventListener('pointermove', move);
     p.el.removeEventListener('pointerup', up);
-    p.el.removeEventListener('pointercancel', up);
+    p.el.removeEventListener('pointercancel', cancel);
+    const dragDist = Math.hypot(p.x - p.dragFrom.x, p.y - p.dragFrom.y);
     p.x = Math.round(p.x / GRID) * GRID;
     p.y = Math.round(p.y / GRID) * GRID;
     if (mode === 'ai') {
@@ -175,11 +185,42 @@ function startDrag(e, id) {
       positionPiece(p);
       sendMove(id);
     }
+    // Double-tap rotates. Detected from pointer events because canceling
+    // pointerdown (above) suppresses dblclick on touch devices.
+    const now = performance.now();
+    const isTap = !cancelled && dragDist < 8 && now - t0 < 350;
+    if (isTap && lastTap.id === id && now - lastTap.t < 400) {
+      rotateSelected();
+      lastTap.id = -1;
+    } else {
+      lastTap.id = isTap ? id : -1;
+      lastTap.t = now;
+    }
   };
+  const up = () => finish(false);
+  const cancel = () => finish(true);
   p.el.setPointerCapture(e.pointerId);
   p.el.addEventListener('pointermove', move);
   p.el.addEventListener('pointerup', up);
-  p.el.addEventListener('pointercancel', up);
+  p.el.addEventListener('pointercancel', cancel);
+}
+
+function setSelected(id) {
+  if (selected >= 0 && state[selected]) state[selected].el.classList.remove('sel');
+  selected = id;
+  if (id >= 0) state[id].el.classList.add('sel');
+}
+
+// Bounding box of a piece's cells at a rotation, in cell units
+// relative to its registration point.
+function cellBox(id, rot) {
+  const cells = ENGINE.cellsFor(id, rot);
+  const is = cells.map(c => c[0]);
+  const js = cells.map(c => c[1]);
+  return {
+    minI: Math.min(...is), maxI: Math.max(...is),
+    minJ: Math.min(...js), maxJ: Math.max(...js),
+  };
 }
 
 function rotateSelected() {
@@ -187,13 +228,34 @@ function rotateSelected() {
   if (mode === 'ai' && !aiDraggable(selected)) return;
   if (mode === 'net' && rulesActive && !netDraggable(selected)) return;
   const p = state[selected];
+  const oldRot = normRot360(p.rot);
+  const newRot = normRot360(p.rot + 90);
+  // shift the reg point so the piece spins around its visual center
+  // (the SWF rotated around the reg point, swinging long pieces wide)
+  const b0 = cellBox(selected, oldRot);
+  const b1 = cellBox(selected, newRot);
+  let nx = p.x + (b0.minI + b0.maxI - b1.minI - b1.maxI) / 2 * GRID;
+  let ny = p.y + (b0.minJ + b0.maxJ - b1.minJ - b1.maxJ) / 2 * GRID;
   // a pending board placement may only rotate into another legal position
   const eng = mode === 'ai' ? ai : (rulesActive ? net : null);
   if (eng && pending && pending.id === selected && !p.el.classList.contains('dragging')) {
-    const newRot = normRot360(p.rot + 90);
-    if (!ENGINE.canPlace(eng, eng.turn, selected, newRot, pending.col, pending.row)) return;
-    pending.rot = newRot;
+    // pieces with an even-by-odd footprint land half a cell off-grid;
+    // alternate the rounding direction so four rotations come back home
+    const up = oldRot === 0 || oldRot === 180;
+    const snap = v => (up ? Math.round(v / GRID) : Math.ceil(v / GRID - 0.5)) * GRID;
+    nx = BOARD_X + snap(nx - BOARD_X);
+    ny = BOARD_Y + snap(ny - BOARD_Y);
+    const col = (nx - BOARD_X) / GRID;
+    const row = (ny - BOARD_Y) / GRID;
+    if (!ENGINE.canPlace(eng, eng.turn, selected, newRot, col, row)) return;
+    pending = { id: selected, rot: newRot, col, row };
   }
+  if (p.el.classList.contains('dragging')) {   // keep the pointer grab anchored
+    p.grabX -= nx - p.x;
+    p.grabY -= ny - p.y;
+  }
+  p.x = nx;
+  p.y = ny;
   p.rot = normRot(p.rot + 90);
   positionPiece(p);
   if (mode === 'net') sendMove(selected);
@@ -206,13 +268,10 @@ document.addEventListener('keyup', e => {
   if (inGame && e.code === 'Space') rotateSelected();
 });
 
-// Rotate on double-click/double-tap too (for touch devices).
-piecesLayer.addEventListener('dblclick', e => {
-  const el = e.target.closest('.piece');
-  if (el) {
-    selected = +el.dataset.id;
-    rotateSelected();
-  }
+const rotateBtn = document.getElementById('rotatebtn');
+rotateBtn.addEventListener('click', () => rotateSelected());
+rotateBtn.addEventListener('keyup', e => {
+  if (e.code === 'Enter') rotateSelected();
 });
 
 // ---------- networking (shared-tabletop mode) ----------
@@ -557,6 +616,7 @@ function newAIGame() {
   ai = ENGINE.newGame(aiGameNum % 2 === 0 ? COMP : HUMAN);
   aiGameNum++;
   pending = null;
+  setSelected(-1);
   for (const r of resetPositions) {
     const p = state[r.id];
     p.x = r.x;
@@ -604,6 +664,7 @@ function initNetGame(n) {
   netGameNum = n;
   net = ENGINE.newGame(netPlacer(n));
   pending = null;
+  setSelected(-1);
   for (const r of resetPositions) {
     const p = state[r.id];
     p.x = r.x;
@@ -807,10 +868,21 @@ if (params.get('opp')) document.getElementById('oppfield').value = params.get('o
 
 // ---------- scale stage to fit window ----------
 
+let rotatedView = false;   // stage turned 90° when that fits the window better
+
 function rescale() {
-  const s = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
-  scaler.style.transform =
-    `translate(${-STAGE_W * s / 2}px, ${-STAGE_H * s / 2}px) scale(${s})`;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  const sLand = Math.min(w / STAGE_W, h / STAGE_H);
+  const sPort = Math.min(w / STAGE_H, h / STAGE_W);
+  rotatedView = sPort > sLand;   // portrait phone: rotate to fill the screen
+  if (rotatedView) {
+    scaler.style.transform =
+      `translate(${STAGE_H * sPort / 2}px, ${-STAGE_W * sPort / 2}px) rotate(90deg) scale(${sPort})`;
+  } else {
+    scaler.style.transform =
+      `translate(${-STAGE_W * sLand / 2}px, ${-STAGE_H * sLand / 2}px) scale(${sLand})`;
+  }
 }
 window.addEventListener('resize', rescale);
 

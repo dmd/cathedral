@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Cathedral</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -43,7 +43,7 @@
           <span class="l1">Cathedral</span>
           <span class="l2">game &copy; Chrisbo I.P. Holdings Limited</span>
           <span class="l2">code by Daniel Drucker dmd@3e.org</span>
-          <span class="l3">press SPACE to rotate selected piece</span>
+          <span class="l3">rotate: &#8635; button, double-tap, or SPACE</span>
         </div>
         <img id="board" src="assets/board.svg" alt="">
         <div id="territory"></div>
@@ -54,6 +54,9 @@
         <div id="complabel" class="sidelabel" hidden>&#9660; COMPUTER &#9660;</div>
         <div id="endturn" role="button" tabindex="0">
           <span class="dot">&#10003;</span><span class="lbl">end turn</span>
+        </div>
+        <div id="rotatebtn" role="button" tabindex="0" aria-label="rotate selected piece">
+          <span class="dot">&#8635;</span><span class="lbl">rotate</span>
         </div>
         <div id="resetbtn" role="button" tabindex="0">
           <span class="dot">&#8634;</span><span class="lbl">reset</span>
