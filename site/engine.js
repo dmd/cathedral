@@ -757,17 +757,16 @@ const ENGINE = (() => {
     const col = m[3].charCodeAt(0) - 97, row = +m[4] - 1;
     const rotGiven = m[5] != null ? (((+m[5]) % 360) + 360) % 360 : null;
     const player = s.turn;
+    // An untagged name means the canonical first copy (dupTag ""); a trailing
+    // ' means the second. Matching the exact tag keeps decoding deterministic
+    // regardless of hand order, so two networked clients never disagree on
+    // which physical piece a move refers to.
     const cands = [];
-    const seenShape = new Set();
     for (const id of s.hand) {
       if (pieceName(id) !== name) continue;
       if (s.phase === 'cathedral') { if (id !== 0) continue; }
       else if (id === 0 || ownerOf(id) !== player) continue;
-      if (tag && dupTag(id) !== tag) continue;
-      // identical untagged copies are interchangeable — try each shape once
-      const sh = PIECES[id].shape;
-      if (!tag && seenShape.has(sh)) continue;
-      seenShape.add(sh);
+      if (dupTag(id) !== tag) continue;
       cands.push(id);
     }
     for (const id of cands) {
@@ -803,7 +802,7 @@ const ENGINE = (() => {
     let n = 0;
     for (let line of lines) {
       line = line.trim();
-      if (!line) continue;
+      if (!line || line[0] === '#') continue;   // blank/comment lines ignored
       if (applyText(s, line) === null) {
         throw new Error(`illegal move at line ${n + 1}: "${line}"`);
       }
