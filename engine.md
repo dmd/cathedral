@@ -221,6 +221,7 @@ plus baselines and a spec. Results vs this engine, equal budget:
 |--------|--------------|----------|-------|-----------------------|
 | 300 ms | 9 | 10 | 5 | 5.4 / 4.0 |
 | 1000 ms | 3 | 20 | 1 | 11.9 / 1.8 |
+| 2500 ms | 5 | 18 | 1 | 8.0 / 2.2 |
 
 It reached **parity at 300 ms** but this engine **dominates once there's time to
 search** (it scales with compute; the challenger's deliberately‑shallow design
