@@ -793,21 +793,28 @@ const ENGINE = (() => {
 
   // Rebuild a state by replaying a record (array of lines, or a newline- or
   // semicolon-separated string). `cathedralPlacer` is the player (1 or 2) who
-  // placed the cathedral — the first line. Returns the final state, or throws
-  // on the first illegal line.
+  // placed the cathedral — the first move. Forced passes (a player with no
+  // legal move) are derived, not recorded, so the record holds only the
+  // placements. Returns the final state, or throws on the first illegal line.
   function replay(cathedralPlacer, record) {
     const lines = Array.isArray(record)
       ? record : String(record).split(/[\n;]+/);
     const s = newGame(cathedralPlacer);
+    const skipForcedPasses = () => {
+      while (s.phase === 'play' && !hasLegalMove(s, s.turn)) pass(s);
+    };
     let n = 0;
     for (let line of lines) {
       line = line.trim();
       if (!line || line[0] === '#') continue;   // blank/comment lines ignored
-      if (applyText(s, line) === null) {
-        throw new Error(`illegal move at line ${n + 1}: "${line}"`);
-      }
       n++;
+      skipForcedPasses();
+      if (line.toLowerCase() === 'pass') continue;   // forced passes are derived
+      if (applyText(s, line) === null) {
+        throw new Error(`illegal move at line ${n}: "${line}"`);
+      }
     }
+    skipForcedPasses();
     return s;
   }
 

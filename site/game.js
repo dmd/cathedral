@@ -408,11 +408,13 @@ let aiGameNum = 0; // cathedral-placing duty alternates between games
 // levels beatable — with a tiny budget alone the computer still plays a
 // strong greedy move, but noise makes it prefer its 2nd/3rd-best moves.
 const LEVELS = {
-  easy:   { budget: 400,  noise: 60 },
-  medium: { budget: 1500, noise: 12 },
+  // easy/medium disabled for now — hard only (re-enable with the level
+  // button below and in index.html to bring back the difficulty selector).
+  // easy:   { budget: 400,  noise: 60 },
+  // medium: { budget: 1500, noise: 12 },
   hard:   { budget: 4000, noise: 0.3 },   // 0.3 only breaks eval ties
 };
-const LEVEL_ORDER = ['easy', 'medium', 'hard'];
+const LEVEL_ORDER = ['hard'];
 let level = 'hard';
 try {
   const saved = localStorage.getItem('cathedral-level');
@@ -531,9 +533,16 @@ function rulesDrop(p, eng) {
   msg('press end turn to confirm — or move, rotate, or take back');
 }
 
-// append a committed move (any source) to the game record
-function logMove(id, rot, col, row) {
-  moveLog.push(ENGINE.moveToText(id, rot, col, row));
+// append a committed move (any source) to the game record, noting any
+// capture it triggered (recorded as a comment so replay still ignores it)
+function logMove(id, rot, col, row, ev) {
+  let note = '';
+  if (ev && ev.captured && ev.captured.length) {
+    const names = ev.captured.map(cid => cid === 0 ? 'cathedral'
+      : `${ENGINE.ownerOf(cid) === 1 ? 'blue' : 'vermillion'} ${pieceName(cid)}`);
+    note = 'captures ' + names.join(', ');
+  }
+  moveLog.push({ text: ENGINE.moveToText(id, rot, col, row), note });
 }
 
 function commitPending() {
@@ -550,7 +559,7 @@ function commitPending() {
           : proceed('that placement is no longer legal');
     return;
   }
-  logMove(id, rot, col, row);
+  logMove(id, rot, col, row, ev);
   if (isNet) {
     sendMoveMsg(ENGINE.moveToText(id, rot, col, row));
     const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
@@ -580,7 +589,7 @@ function proceed(prefix) {
   }
   if (ai.turn === COMP) {
     setTimeout(computerMove, 650);
-    msg(pre + `computer is thinking… (${level})`);
+    msg(pre + 'computer is thinking…');
     return;
   }
   // human's turn
@@ -612,8 +621,8 @@ function computerMove() {
   const placingCathedral = ai.phase === 'cathedral';
   const d = LEVELS[level];
   const m = ENGINE.chooseMove(ai, COMP, null, d.budget, d.noise);
-  logMove(m.id, m.rot, m.col, m.row);
   const ev = ENGINE.place(ai, m.id, m.rot, m.col, m.row);
+  logMove(m.id, m.rot, m.col, m.row, ev);
   const p = state[m.id];
   p.x = BOARD_X + m.col * GRID;
   p.y = BOARD_Y + m.row * GRID;
@@ -631,8 +640,8 @@ function computerMove() {
 function endAIGame() {
   const sc = ENGINE.score(ai);
   let result;
-  if (sc[HUMAN] < sc[COMP]) result = `you beat the ${level} computer!`;
-  else if (sc[HUMAN] > sc[COMP]) result = `the ${level} computer wins.`;
+  if (sc[HUMAN] < sc[COMP]) result = 'you win!';
+  else if (sc[HUMAN] > sc[COMP]) result = 'the computer wins.';
   else result = "it's a draw.";
   msg(`game over — ${result} press reset for a new game`);
   refreshLocks();
@@ -772,7 +781,7 @@ function applyPeerMove(moveText) {
     msg(`out of sync with ${target} — press reset to start a new game`);
     return;
   }
-  logMove(mv.id, mv.rot, mv.col, mv.row);
+  logMove(mv.id, mv.rot, mv.col, mv.row, ev);
   const p = state[mv.id];
   p.x = BOARD_X + mv.col * GRID;             // glide to the committed cell
   p.y = BOARD_Y + mv.row * GRID;
@@ -821,20 +830,18 @@ onTap(muteBtn, () => {
 });
 renderMute();
 
-// difficulty: tap to cycle, remembered across games; applies from the
-// computer's next move
-const levelBtn = document.getElementById('levelbtn');
-
-function renderLevel() {
-  levelBtn.querySelector('.lbl').textContent = level;
-}
-
-onTap(levelBtn, () => {
-  level = LEVEL_ORDER[(LEVEL_ORDER.indexOf(level) + 1) % LEVEL_ORDER.length];
-  try { localStorage.setItem('cathedral-level', level); } catch {}
-  renderLevel();
-});
-renderLevel();
+// difficulty selector disabled while only "hard" exists — re-enable this
+// block (and the #levelbtn element in index.html) to bring it back.
+// const levelBtn = document.getElementById('levelbtn');
+// function renderLevel() {
+//   levelBtn.querySelector('.lbl').textContent = level;
+// }
+// onTap(levelBtn, () => {
+//   level = LEVEL_ORDER[(LEVEL_ORDER.indexOf(level) + 1) % LEVEL_ORDER.length];
+//   try { localStorage.setItem('cathedral-level', level); } catch {}
+//   renderLevel();
+// });
+// renderLevel();
 
 // ---------- moves list (hidden desktop feature: press 'm') ----------
 
@@ -843,7 +850,10 @@ renderLevel();
 function movesRecord() {
   const placer = logPlacer === 1 ? 'blue' : 'vermillion';
   const lines = ['# Cathedral game record', `# cathedral placed by ${placer}`];
-  for (const mv of moveLog) lines.push(mv);
+  for (const mv of moveLog) {
+    lines.push(mv.text);
+    if (mv.note) lines.push('#   ' + mv.note);   // commented: replay ignores it
+  }
   return lines.join('\n');
 }
 
