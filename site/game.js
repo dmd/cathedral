@@ -53,7 +53,7 @@ let origin = '';            // my canonical name
 let target = '';            // opponent name
 let net = null;             // ENGINE state for network play (null until engaged)
 let netGameNum = 0;         // cathedral duty alternates; synced via RESET
-let myColor = 1;            // 1 blue / 2 vermillion (lexicographically first name is blue)
+let myColor = 1;            // 1 blue / 2 orange (lexicographically first name is blue)
 let moveLog = [];           // notation of every committed move this game (cathedral first)
 let logPlacer = 1;          // who placed the cathedral (for replay / the moves modal)
 let aliveTimer = null;      // network presence keepalive
@@ -400,7 +400,7 @@ function handleMessage(text) {
 // ---------- vs. computer ----------
 
 const HUMAN = 1;   // blue, left side
-const COMP = 2;    // vermillion, right side
+const COMP = 2;    // orange, right side
 let ai = null;     // ENGINE state
 let aiGameNum = 0; // cathedral-placing duty alternates between games
 
@@ -539,7 +539,7 @@ function logMove(id, rot, col, row, ev) {
   let note = '';
   if (ev && ev.captured && ev.captured.length) {
     const names = ev.captured.map(cid => cid === 0 ? 'cathedral'
-      : `${ENGINE.ownerOf(cid) === 1 ? 'blue' : 'vermillion'} ${pieceName(cid)}`);
+      : `${ENGINE.ownerOf(cid) === 1 ? 'blue' : 'orange'} ${pieceName(cid)}`);
     note = 'captures ' + names.join(', ');
   }
   moveLog.push({ text: ENGINE.moveToText(id, rot, col, row), note });
@@ -848,7 +848,7 @@ renderMute();
 // the game record as text: a header naming the cathedral placer (so it
 // round-trips through ENGINE.replay), then one move per line
 function movesRecord() {
-  const placer = logPlacer === 1 ? 'blue' : 'vermillion';
+  const placer = logPlacer === 1 ? 'blue' : 'orange';
   const lines = ['# Cathedral game record', `# cathedral placed by ${placer}`];
   for (const mv of moveLog) {
     lines.push(mv.text);
