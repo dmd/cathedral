@@ -1,9 +1,23 @@
-# Add this inside your existing site block to proxy WebSocket XMLSocket traffic.
-# Example:
-# eco.3e.org {
-#   root * /var/www/html
-#   file_server
-#   handle_path /ws* {
-#     reverse_proxy 127.0.0.1:8181
-#   }
-# }
+# Caddy config for serving the game and proxying its WebSocket traffic.
+# This mirrors the live deployment at eco.3e.org, where the game is served
+# under a /cathedral/ subpath.
+#
+# Note: the client connects to wss://<host>/ws — the WebSocket endpoint is at
+# the SITE ROOT, not under /cathedral/, because the client derives the URL from
+# the host only. So handle /ws* at the root and reverse_proxy it to websockify.
+
+eco.3e.org {
+	import access_log            # optional, site-specific logging
+
+	root * /var/www/html
+	file_server
+
+	redir /cathedral /cathedral/
+	handle_path /cathedral/* {
+		root * /home/dmd/stacks/cathedral/site
+	}
+
+	handle_path /ws* {
+		reverse_proxy 127.0.0.1:8181
+	}
+}
