@@ -495,10 +495,13 @@ const ENGINE = (() => {
             3.0 * (sc[opp] - sc[me]) +
             1.5 * (usableSpace(s, me) - usableSpace(s, opp)) +
             1.2 * influence(s, me);
-    // late game is a packing contest: buildings that won't fit into the
-    // remaining space are lost points
-    if (empty <= 45) {
-      v += 3.0 * (packLoss(s, opp) - packLoss(s, me));
+    // The packing contest starts well before the board is full: bulky
+    // pieces (esp. 4-square shapes) get stranded if the engine defers them
+    // until the gaps are too fragmented. React from mid-game and weight it
+    // enough to actually shift move choice. (Reacting even earlier, or
+    // also adding a flat bulky-in-hand penalty, both tested worse.)
+    if (empty <= 62) {
+      v += 4.0 * (packLoss(s, opp) - packLoss(s, me));
     }
     return v;
   }
