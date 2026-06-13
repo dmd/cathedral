@@ -1,14 +1,14 @@
 # Cathedral (HTML/JS)
 
 A two-player version of the **Cathedral** board game: play the built-in computer
-opponent, or play a friend online. `site/` is a self-contained HTML/JS/CSS app —
-no build step, no dependencies, no plugins.
+opponent, or play a friend online. `site/` is a self-contained HTML/JS/CSS app.
 
-The game was originally written in Flash in 2001. This is a from-scratch
-HTML/JS reconstruction (the piece geometry, layout, and sounds were extracted
-from the original `.swf` with JPEXS ffdec). The original Flash sources and the
-`.swf` are no longer in the working tree but remain in the git history if you
-ever want them.
+I wrote this game (by hand, obviously) originally in Flash in 2001.
+
+This is a vibe-coded (Claude) from-scratch HTML/JS reconstruction (the
+piece geometry, layout, and sounds were extracted from the original
+`.swf` with JPEXS ffdec). The original Flash sources and the `.swf`
+are no longer in the working tree but remain in the git history.
 
 ## Playing
 
