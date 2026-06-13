@@ -3,12 +3,13 @@
 /*
  * Cathedral — HTML/JS port of the 2001 Flash original.
  *
- * Two modes:
- *  - network ("play"): free-form shared tabletop, speaking the original
- *    XMLSocket protocol (null-terminated MOTION / YOURTURN / ALIVE XML)
- *    over a WebSocket — interoperates with the SWF running in Ruffle.
- *  - vs. computer: full rules enforced by engine.js (legal placement,
- *    territory claims, captures, scoring) against a built-in AI.
+ * Two modes, both rules-enforced by engine.js (legal placement, territory
+ * claims, captures, scoring):
+ *  - vs. computer: play the built-in AI.
+ *  - play a friend: two browsers in lockstep over a WebSocket relay,
+ *    exchanging committed moves in notation (null-terminated XML frames).
+ *
+ * Desktop: press 'm' for a copy-pasteable list of the moves so far.
  */
 
 const GRID = 25;
@@ -48,14 +49,14 @@ const opstatus = document.getElementById('opstatus');
 const gamemsg = document.getElementById('gamemsg');
 
 let mode = null;            // 'net' | 'ai'
-let origin = '';            // my name (uppercased, like the SWF)
+let origin = '';            // my canonical name
 let target = '';            // opponent name
-let rulesWanted = false;    // "enforce the rules" toggle (net mode)
-let rulesDecided = false;   // have we seen the peer's stance yet?
-let rulesActive = false;    // both sides enforce: engine drives the game
-let net = null;             // ENGINE state for rules-enforced net play
+let net = null;             // ENGINE state for network play (null until engaged)
 let netGameNum = 0;         // cathedral duty alternates; synced via RESET
-let myColor = 1;            // 1 green / 2 red (lexicographically first name is green)
+let myColor = 1;            // 1 blue / 2 vermillion (lexicographically first name is blue)
+let moveLog = [];           // notation of every committed move this game (cathedral first)
+let logPlacer = 1;          // who placed the cathedral (for replay / the moves modal)
+let aliveTimer = null;      // network presence keepalive
 let pending = null;         // tentative placement {id, rot, col, row}; commits on End Turn
 let selected = -1;          // last grabbed piece (SPACE rotates it)
 let zTop = 100;
@@ -79,7 +80,7 @@ function sendHome(p, announce) {
   p.y = orig.y;
   p.rot = orig.rot;
   glidePiece(p);
-  if (announce && mode === 'net') sendMove(p.id);
+  if (announce && mode === 'net') sendDrag(p.id);
 }
 
 function normRot(r) {
@@ -141,7 +142,7 @@ const lastTap = { id: -1, t: 0 };
 
 function startDrag(e, id) {
   if (mode === 'ai' && !aiDraggable(id)) return;
-  if (mode === 'net' && rulesActive && !netDraggable(id)) return;
+  if (mode === 'net' && net && !netDraggable(id)) return;
   e.preventDefault();
   const p = state[id];
   setSelected(id);
@@ -163,7 +164,7 @@ function startDrag(e, id) {
       const now = performance.now();
       if (now - lastSent > DRAG_SEND_MS) {
         lastSent = now;
-        sendMove(id);
+        sendDrag(id);
       }
     }
   };
@@ -177,13 +178,10 @@ function startDrag(e, id) {
     p.y = Math.round(p.y / GRID) * GRID;
     if (mode === 'ai') {
       rulesDrop(p, ai);
-    } else if (rulesActive) {
+    } else if (net) {
       rulesDrop(p, net);
-    } else if (rulesWanted && !rulesDecided) {
-      gateDrop(p);
     } else {
-      positionPiece(p);
-      sendMove(id);
+      gateDrop(p);              // network game not engaged yet
     }
     // Double-tap rotates. Detected from pointer events because canceling
     // pointerdown (above) suppresses dblclick on touch devices.
@@ -226,7 +224,7 @@ function cellBox(id, rot) {
 function rotateSelected() {
   if (selected < 0) return;
   if (mode === 'ai' && !aiDraggable(selected)) return;
-  if (mode === 'net' && rulesActive && !netDraggable(selected)) return;
+  if (mode === 'net' && net && !netDraggable(selected)) return;
   const p = state[selected];
   const oldRot = normRot360(p.rot);
   const newRot = normRot360(p.rot + 90);
@@ -237,7 +235,7 @@ function rotateSelected() {
   let nx = p.x + (b0.minI + b0.maxI - b1.minI - b1.maxI) / 2 * GRID;
   let ny = p.y + (b0.minJ + b0.maxJ - b1.minJ - b1.maxJ) / 2 * GRID;
   // a pending board placement may only rotate into another legal position
-  const eng = mode === 'ai' ? ai : (rulesActive ? net : null);
+  const eng = mode === 'ai' ? ai : net;
   if (eng && pending && pending.id === selected && !p.el.classList.contains('dragging')) {
     // pieces with an even-by-odd footprint land half a cell off-grid;
     // alternate the rounding direction so four rotations come back home
@@ -258,14 +256,17 @@ function rotateSelected() {
   p.y = ny;
   p.rot = normRot(p.rot + 90);
   positionPiece(p);
-  if (mode === 'net') sendMove(selected);
+  if (mode === 'net') sendDrag(selected);
 }
 
 document.addEventListener('keydown', e => {
   if (inGame && e.code === 'Space') e.preventDefault();
 });
 document.addEventListener('keyup', e => {
-  if (inGame && e.code === 'Space') rotateSelected();
+  if (!inGame) return;
+  if (e.code === 'Space') rotateSelected();
+  // hidden desktop feature: 'm' shows the full move list, copy-pasteable
+  else if (e.key === 'm' && !e.metaKey && !e.ctrlKey && !e.altKey) toggleMovesModal();
 });
 
 // Buttons activate on pointerup rather than click: touchend is swallowed
@@ -283,7 +284,14 @@ rotateBtn.addEventListener('keyup', e => {
   if (e.code === 'Enter') rotateSelected();
 });
 
-// ---------- networking (shared-tabletop mode) ----------
+// ---------- networking (rules-enforced, semantic moves) ----------
+//
+// The relay server is a dumb broadcast; the two clients stay in lockstep by
+// running the same engine over the same move stream. The only authoritative
+// message is MOVE, carrying a committed placement in notation (e.g.
+// "academy f3 r270") or "pass"; claims, captures and forced passes are
+// derived identically on each side. DRAG is an optional cosmetic preview of
+// the opponent sliding a piece before they commit — it never touches state.
 
 function wsUrl() {
   const param = new URLSearchParams(location.search).get('ws');
@@ -305,10 +313,7 @@ function connect() {
     return;
   }
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => {
-    wsSend(`<ALIVE target="${xmlEsc(target)}" origin="${xmlEsc(origin)}"` +
-           `${rulesWanted ? ' rules="1"' : ''} />`);
-  };
+  ws.onopen = sendAlive;
   ws.onmessage = ev => {
     const bytes = typeof ev.data === 'string'
       ? new TextEncoder().encode(ev.data)
@@ -342,10 +347,21 @@ function xmlEsc(s) {
           .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function sendMove(id) {
+function sendAlive() {
+  wsSend(`<ALIVE target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+}
+
+// cosmetic: stream the piece I'm currently sliding so my opponent sees it move
+function sendDrag(id) {
   const p = state[id];
-  wsSend(`<MOTION id="${id}" x="${Math.round(p.x)}" y="${Math.round(p.y)}"` +
+  wsSend(`<DRAG id="${id}" x="${Math.round(p.x)}" y="${Math.round(p.y)}"` +
          ` rot="${Math.round(normRot(p.rot))}" target="${xmlEsc(target)}"` +
+         ` origin="${xmlEsc(origin)}" />`);
+}
+
+// authoritative: a committed move in notation, or "pass"
+function sendMoveMsg(moveText) {
+  wsSend(`<MOVE move="${xmlEsc(moveText)}" target="${xmlEsc(target)}"` +
          ` origin="${xmlEsc(origin)}" />`);
 }
 
@@ -358,45 +374,26 @@ function handleMessage(text) {
   }
   const m = doc.documentElement;
   if (!m || m.nodeName === 'parsererror') return;
-  // Same filter as the SWF: addressed to me, from my opponent.
+  // addressed to me, from my chosen opponent
   if (m.getAttribute('target') !== origin || m.getAttribute('origin') !== target) return;
 
-  if (m.nodeName === 'MOTION') {
+  if (m.nodeName === 'ALIVE') {
+    lastPeerAlive = Date.now();
+    if (!net) startNetGame();          // first contact: both sides engage
+  } else if (m.nodeName === 'DRAG') {
+    if (!net || net.turn === myColor) return;
     const id = +m.getAttribute('id');
     const p = state[id];
-    if (!p) return;
-    const isCommit = m.getAttribute('commit') === '1';
-    if (isCommit && rulesWanted && !rulesActive && !rulesDecided) engageRules();
-    if (rulesActive && isCommit) {
-      netCommitFromPeer(p, +m.getAttribute('x'), +m.getAttribute('y'), +m.getAttribute('rot'));
-      return;
-    }
-    if (rulesActive) {
-      // live drag preview: only pieces still in the opponent's hand may move
-      if (!net.hand.includes(id)) return;
-      if (id !== 0 && ENGINE.ownerOf(id) === myColor) return;
-    }
+    if (!p || !net.hand.includes(id)) return;       // only the opponent's hand
+    if (id !== 0 && ENGINE.ownerOf(id) === myColor) return;
     p.x = +m.getAttribute('x');
     p.y = +m.getAttribute('y');
     p.rot = +m.getAttribute('rot');
     positionPiece(p);
-  } else if (m.nodeName === 'YOURTURN') {
-    if (rulesActive) return;       // turns are implicit when enforcing rules
-    endturnBtn.classList.remove('dim');
-    turnsound.play().catch(() => {});
-  } else if (m.nodeName === 'ALIVE') {
-    lastPeerAlive = Date.now();
-    if (rulesWanted && !rulesDecided) {
-      rulesDecided = true;
-      if (m.getAttribute('rules') === '1') {
-        engageRules();
-      } else {
-        msg(`${target} is not enforcing rules — free-form play`);
-        setTimeout(() => { if (!rulesActive) msg(''); }, 6000);
-      }
-    }
-  } else if (m.nodeName === 'RESET' && rulesActive) {
-    initNetGame(+m.getAttribute('game') || 0);
+  } else if (m.nodeName === 'MOVE') {
+    if (net) applyPeerMove(m.getAttribute('move') || '');
+  } else if (m.nodeName === 'RESET') {
+    if (net) initNetGame(+m.getAttribute('game') || 0);
   }
 }
 
@@ -432,7 +429,7 @@ function aiDraggable(id) {
 function refreshLocks() {
   let test = null;
   if (mode === 'ai') test = aiDraggable;
-  else if (mode === 'net' && rulesActive) test = netDraggable;
+  else if (mode === 'net' && net) test = netDraggable;
   for (const id of Object.keys(state)) {
     state[id].el.classList.toggle('locked', test ? !test(+id) : false);
   }
@@ -500,13 +497,13 @@ function rulesDrop(p, eng) {
     p.y = p.dragFrom.y;
     p.rot = p.dragFrom.rot;
     glidePiece(p);
-    if (isNet) sendMove(p.id);
+    if (isNet) sendDrag(p.id);
   };
   const { rot, col0, row0, cells, inside } = dropInfo(p);
 
   if (inside.length === 0) {       // parked in the tray — not a move
     positionPiece(p);
-    if (isNet) sendMove(p.id);
+    if (isNet) sendDrag(p.id);
     if (pending && pending.id === p.id) {
       pending = null;              // took the tentative placement back
       updateEndTurn();
@@ -529,9 +526,14 @@ function rulesDrop(p, eng) {
   }
   pending = { id: p.id, rot, col: col0, row: row0 };
   positionPiece(p);
-  if (isNet) sendMove(p.id);
+  if (isNet) sendDrag(p.id);
   updateEndTurn();
   msg('press end turn to confirm — or move, rotate, or take back');
+}
+
+// append a committed move (any source) to the game record
+function logMove(id, rot, col, row) {
+  moveLog.push(ENGINE.moveToText(id, rot, col, row));
 }
 
 function commitPending() {
@@ -548,10 +550,9 @@ function commitPending() {
           : proceed('that placement is no longer legal');
     return;
   }
+  logMove(id, rot, col, row);
   if (isNet) {
-    wsSend(`<MOTION id="${id}" x="${Math.round(p.x)}" y="${Math.round(p.y)}"` +
-           ` rot="${Math.round(normRot(p.rot))}" commit="1"` +
-           ` target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+    sendMoveMsg(ENGINE.moveToText(id, rot, col, row));
     const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
     netProceed(notes.join('; '));
   } else {
@@ -561,10 +562,9 @@ function commitPending() {
 }
 
 function updateEndTurn() {
-  if (mode === 'ai' || rulesActive) {
+  if (mode === 'ai' || net) {
     endturnBtn.style.display = '';
     endturnBtn.classList.add('confirm');
-    endturnBtn.classList.remove('dim');
     endturnBtn.classList.toggle('disabled', !pending);
   }
 }
@@ -612,6 +612,7 @@ function computerMove() {
   const placingCathedral = ai.phase === 'cathedral';
   const d = LEVELS[level];
   const m = ENGINE.chooseMove(ai, COMP, null, d.budget, d.noise);
+  logMove(m.id, m.rot, m.col, m.row);
   const ev = ENGINE.place(ai, m.id, m.rot, m.col, m.row);
   const p = state[m.id];
   p.x = BOARD_X + m.col * GRID;
@@ -638,8 +639,11 @@ function endAIGame() {
 }
 
 function newAIGame() {
-  ai = ENGINE.newGame(aiGameNum % 2 === 0 ? COMP : HUMAN);
+  const placer = aiGameNum % 2 === 0 ? COMP : HUMAN;
+  ai = ENGINE.newGame(placer);
   aiGameNum++;
+  moveLog = [];
+  logPlacer = placer;
   pending = null;
   setSelected(-1);
   for (const r of resetPositions) {
@@ -654,16 +658,14 @@ function newAIGame() {
   proceed();
 }
 
-// ---------- rules-enforced network play ----------
+// ---------- network play (rules always enforced) ----------
 //
-// Engaged only when BOTH clients advertise rules="1" in their ALIVE
-// keepalives; otherwise the game stays a free-form tabletop (and remains
-// compatible with the SWF in Ruffle). Both clients run the same engine in
-// lockstep: only legal placements are sent (MOTION with commit="1"), and
-// claims/captures/passes are derived identically on each side.
+// Both clients run the same engine in lockstep over the shared move stream:
+// each committed placement is sent once (MOVE, in notation), and
+// claims/captures/forced-passes are derived identically on each side.
 
 function netOther() { return ENGINE.other(myColor); }
-function netPlacer(n) { return n % 2 === 0 ? 1 : 2; }   // green opens game 1
+function netPlacer(n) { return n % 2 === 0 ? 1 : 2; }   // blue opens game 1
 
 function netDraggable(id) {
   if (!net || net.phase === 'over' || net.turn !== myColor) return false;
@@ -672,9 +674,9 @@ function netDraggable(id) {
   return id !== 0 && ENGINE.ownerOf(id) === myColor;
 }
 
-function engageRules() {
-  rulesDecided = true;
-  rulesActive = true;
+// Engage the game on first contact with the chosen opponent. Colors are
+// assigned deterministically from the (canonical) names, so both ends agree.
+function startNetGame() {
   myColor = origin <= target ? 1 : 2;
   const left = document.getElementById('youlabel');
   const right = document.getElementById('complabel');
@@ -687,7 +689,10 @@ function engageRules() {
 
 function initNetGame(n) {
   netGameNum = n;
-  net = ENGINE.newGame(netPlacer(n));
+  const placer = netPlacer(n);
+  net = ENGINE.newGame(placer);
+  moveLog = [];
+  logPlacer = placer;
   pending = null;
   setSelected(-1);
   for (const r of resetPositions) {
@@ -742,50 +747,48 @@ function netProceed(prefix) {
   msg(parts.join('; '));
 }
 
+// a drop before the opponent has connected: bounce it back to the tray
 function gateDrop(p) {
-  const { inside } = dropInfo(p);
-  if (inside.length === 0) {
-    positionPiece(p);
-    sendMove(p.id);
-    return;
-  }
   p.x = p.dragFrom.x;
   p.y = p.dragFrom.y;
   p.rot = p.dragFrom.rot;
   glidePiece(p);
-  sendMove(p.id);
   msg(`waiting for ${target || 'opponent'} to connect before the game starts…`);
 }
 
-function netCommitFromPeer(p, x, y, rot) {
-  const col0 = (x - BOARD_X) / GRID;
-  const row0 = (y - BOARD_Y) / GRID;
+// Apply the opponent's committed move (notation). Both engines are in
+// lockstep, so a move that doesn't decode means we've desynced.
+function applyPeerMove(moveText) {
+  if (net.turn === myColor) return;          // not their turn — stray message
+  const mv = ENGINE.textToMove(net, moveText);
+  if (!mv) {
+    msg(`out of sync with ${target} — press reset to start a new game`);
+    return;
+  }
+  if (mv.pass) { ENGINE.pass(net); netProceed(`${target} passes`); return; }
   const wasCathedral = net.phase === 'cathedral';
-  const ev = ENGINE.place(net, p.id, normRot360(rot), col0, row0);
+  const ev = ENGINE.place(net, mv.id, mv.rot, mv.col, mv.row);
   if (!ev) {
     msg(`out of sync with ${target} — press reset to start a new game`);
     return;
   }
-  p.x = x;
-  p.y = y;
-  p.rot = rot;
+  logMove(mv.id, mv.rot, mv.col, mv.row);
+  const p = state[mv.id];
+  p.x = BOARD_X + mv.col * GRID;             // glide to the committed cell
+  p.y = BOARD_Y + mv.row * GRID;
+  p.rot = normRot(mv.rot);
   glidePiece(p);
   const notes = applyEvents(net, ev, myColor, 'your', `${target}'s`);
   const what = wasCathedral
     ? `${target} placed the cathedral`
-    : `${target} placed ${withArticle(pieceName(p.id))}`;
+    : `${target} placed ${withArticle(pieceName(mv.id))}`;
   netProceed([what, ...notes].join('; '));
 }
 
 // ---------- buttons ----------
 
 onTap(endturnBtn, () => {
-  if (mode === 'ai' || rulesActive) {
-    if (pending) commitPending();
-    return;
-  }
-  endturnBtn.classList.add('dim');
-  wsSend(`<YOURTURN target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
+  if (pending) commitPending();
 });
 
 onTap(resetBtn, () => {
@@ -793,25 +796,10 @@ onTap(resetBtn, () => {
     newAIGame();
     return;
   }
-  if (rulesActive) {
+  if (mode === 'net' && net) {
     const n = netGameNum + 1;
     wsSend(`<RESET game="${n}" target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
     initNetGame(n);
-    return;
-  }
-  for (const r of resetPositions) {
-    // Like the SWF: reset the opponent's board, then our own via the
-    // server echo (the server broadcasts to all clients, including us).
-    wsSend(`<MOTION id="${r.id}" x="${r.x}" y="${r.y}" rot="${r.rot}"` +
-           ` target="${xmlEsc(target)}" origin="${xmlEsc(origin)}" />`);
-    wsSend(`<MOTION id="${r.id}" x="${r.x}" y="${r.y}" rot="${r.rot}"` +
-           ` target="${xmlEsc(origin)}" origin="${xmlEsc(target)}" />`);
-    // Also apply locally so reset works offline.
-    const p = state[r.id];
-    p.x = r.x;
-    p.y = r.y;
-    p.rot = r.rot;
-    positionPiece(p);
   }
 });
 
@@ -848,6 +836,41 @@ onTap(levelBtn, () => {
 });
 renderLevel();
 
+// ---------- moves list (hidden desktop feature: press 'm') ----------
+
+// the game record as text: a header naming the cathedral placer (so it
+// round-trips through ENGINE.replay), then one move per line
+function movesRecord() {
+  const placer = logPlacer === 1 ? 'blue' : 'vermillion';
+  const lines = ['# Cathedral game record', `# cathedral placed by ${placer}`];
+  for (const mv of moveLog) lines.push(mv);
+  return lines.join('\n');
+}
+
+const movesModal = document.getElementById('movesmodal');
+const movesText = document.getElementById('movestext');
+
+function toggleMovesModal() {
+  if (!movesModal) return;
+  if (movesModal.hidden) {
+    movesText.value = movesRecord();
+    movesModal.hidden = false;
+  } else {
+    movesModal.hidden = true;
+  }
+}
+
+if (movesModal) {
+  onTap(document.getElementById('movesclose'), () => { movesModal.hidden = true; });
+  onTap(document.getElementById('movescopy'), () => {
+    movesText.select();
+    const done = () => { const c = document.getElementById('movescopy'); c.textContent = 'copied'; setTimeout(() => { c.textContent = 'copy'; }, 1200); };
+    if (navigator.clipboard) navigator.clipboard.writeText(movesText.value).then(done, () => { try { document.execCommand('copy'); done(); } catch {} });
+    else { try { document.execCommand('copy'); done(); } catch {} }
+  });
+  movesModal.addEventListener('pointerdown', e => { if (e.target === movesModal) movesModal.hidden = true; });
+}
+
 // ---------- status ----------
 
 function updateStatus() {
@@ -883,7 +906,6 @@ const cleanName = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
 function startGame() {
   if (inGame) return;
-  mode = 'net';
   const nameField = document.getElementById('namefield');
   const oppField = document.getElementById('oppfield');
   origin = cleanName(nameField.value);
@@ -891,20 +913,19 @@ function startGame() {
   // show the canonical names actually used for matching
   nameField.value = origin;
   oppField.value = target;
-  const chk = document.getElementById('ruleschk').checked;
-  rulesWanted = chk && !!origin && !!target && origin !== target;
-  enterGameScreen();
-  if (chk && !rulesWanted) {
-    msg('rules enforcement needs two distinct names — free-form play');
-    setTimeout(() => { if (!rulesActive) msg(''); }, 6000);
-  } else if (rulesWanted) {
-    msg(`waiting for ${target} to connect…`);
+  const help = document.getElementById('nethelp');
+  if (!origin || !target || origin === target) {
+    help.classList.add('warn');
+    help.textContent = 'Enter your name and a different friend’s name, then press play.';
+    (origin ? oppField : nameField).focus();
+    return;
   }
+  help.classList.remove('warn');
+  mode = 'net';
+  enterGameScreen();
+  msg(`waiting for ${target} to connect…`);
   connect();
-  setInterval(() => {
-    wsSend(`<ALIVE target="${xmlEsc(target)}" origin="${xmlEsc(origin)}"` +
-           `${rulesWanted ? ' rules="1"' : ''} />`);
-  }, ALIVE_SEND_MS);
+  aliveTimer = setInterval(sendAlive, ALIVE_SEND_MS);
   setInterval(updateStatus, 300);
   updateStatus();
 }

@@ -101,14 +101,7 @@ html, body {
   outline: none;
 }
 
-#ruleslabel {
-  align-self: center;
-  font-size: 16px;
-  cursor: pointer;
-  user-select: none;
-  -webkit-user-select: none;
-}
-#ruleslabel input { vertical-align: -2px; }
+#nethelp.warn { color: #D55E00; }
 
 #intromodes {
   display: flex;
@@ -336,4 +329,51 @@ html, body {
   text-align: center;
   font: 11px Arial, sans-serif;
   color: #000;
+}
+
+/* ---------- moves list modal (desktop 'm') ---------- */
+#movesmodal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+#movesmodal[hidden] { display: none; }
+.movesbox {
+  width: min(90vw, 420px);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #000;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+.moveshdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font: bold 14px Helvetica, Arial, sans-serif;
+  border-bottom: 1px solid #ddd;
+}
+.movesbtns span {
+  margin-left: 14px;
+  cursor: pointer;
+  color: #0072B2;
+  font-weight: normal;
+}
+.movesbtns span:hover { color: #ff9900; }
+#movestext {
+  flex: 1;
+  min-height: 220px;
+  border: 0;
+  padding: 10px 12px;
+  resize: none;
+  font: 13px/1.5 'SF Mono', Menlo, Consolas, monospace;
+  color: #000;
+  outline: none;
+  white-space: pre;
 }

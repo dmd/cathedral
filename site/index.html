@@ -42,7 +42,6 @@
               <input id="namefield" autocomplete="off" maxlength="20" spellcheck="false"></label>
             <label class="introrow"><span>Opponent:</span>
               <input id="oppfield" autocomplete="off" maxlength="20" spellcheck="false"></label>
-            <label id="ruleslabel"><input type="checkbox" id="ruleschk" checked> enforce the rules</label>
           </div>
           <div id="playbtn" role="button" tabindex="0">
             <span class="dot"><svg width="20" height="21" viewBox="0 0 12.9 13.75">
@@ -95,6 +94,17 @@
 
     </div>
   </div>
+
+  <div id="movesmodal" hidden>
+    <div class="movesbox">
+      <div class="moveshdr">
+        <span>moves</span>
+        <span class="movesbtns"><span id="movescopy" role="button" tabindex="0">copy</span><span id="movesclose" role="button" tabindex="0">close</span></span>
+      </div>
+      <textarea id="movestext" readonly spellcheck="false"></textarea>
+    </div>
+  </div>
+
   <script src="data.js"></script>
   <script src="engine.js"></script>
   <script src="game.js"></script>
