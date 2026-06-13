@@ -691,11 +691,133 @@ const ENGINE = (() => {
     return best;
   }
 
+  // ---------- move notation ----------
+  //
+  // Human-readable, replayable move text: the building name (with a trailing
+  // ' to distinguish the second of an identical pair), the piece's top-left
+  // occupied square in algebraic coordinates (columns a-j left to right, rows
+  // 1-10 top to bottom), and an orientation tag rN for pieces that aren't
+  // rotation-symmetric. Examples:
+  //   "cathedral e5 r90"   "tavern e5"   "stable' a1 r90"   "academy f3 r270"
+  //   "pass"
+  // A whole game is just these lines in order, the cathedral placement first.
+
+  const SHAPE_NAME = {
+    41: 'cathedral',
+    21: 'tavern', 23: 'stable', 25: 'inn', 27: 'bridge', 29: 'square',
+    44: 'manor', 31: 'abbey', 35: 'castle', 33: 'infirmary', 37: 'tower', 39: 'academy',
+    66: 'tavern', 64: 'stable', 58: 'inn', 52: 'bridge', 62: 'square',
+    60: 'manor', 48: 'abbey', 54: 'castle', 56: 'infirmary', 68: 'tower', 50: 'academy',
+  };
+  const pieceName = id => SHAPE_NAME[PIECES[id].shape] || 'piece';
+
+  // disambiguator: "" for the first piece of a shape/owner, "'" for the
+  // second, etc. (only taverns, stables and inns come in identical pairs)
+  function dupTag(id) {
+    const shape = PIECES[id].shape, owner = ownerOf(id);
+    let rank = 0;
+    for (const p of PIECES) {
+      if (p.shape !== shape || ownerOf(p.id) !== owner) continue;
+      if (p.id === id) break;
+      rank++;
+    }
+    return "'".repeat(rank);
+  }
+
+  function coveredCells(id, rot, col, row) {
+    return cellsFor(id, rot).map(([i, j]) => [col + i, row + j]);
+  }
+  // top-left occupied square: smallest row, then smallest column
+  function topLeftCell(cells) {
+    let best = cells[0];
+    for (const c of cells) {
+      if (c[1] < best[1] || (c[1] === best[1] && c[0] < best[0])) best = c;
+    }
+    return best;
+  }
+  const sqText = (c, r) => String.fromCharCode(97 + c) + (r + 1);
+
+  function moveToText(id, rot, col, row) {
+    const [tc, tr] = topLeftCell(coveredCells(id, rot, col, row));
+    let t = pieceName(id) + dupTag(id) + ' ' + sqText(tc, tr);
+    if (distinctRots[id].length > 1) t += ' r' + (((rot % 360) + 360) % 360);
+    return t;
+  }
+
+  // Parse move text against the state it applies to. Returns
+  // { id, rot, col, row } or { pass: true } or null if it is not a legal move
+  // in s. Identical pieces are interchangeable, so the disambiguator is
+  // optional on input; orientation may be omitted for symmetric pieces.
+  function textToMove(s, text) {
+    text = String(text).trim().toLowerCase();
+    if (text === 'pass') return { pass: true };
+    const m = text.match(/^([a-z]+)('*)\s+([a-j])(10|[1-9])(?:\s+r(\d+))?$/);
+    if (!m) return null;
+    const name = m[1], tag = m[2];
+    const col = m[3].charCodeAt(0) - 97, row = +m[4] - 1;
+    const rotGiven = m[5] != null ? (((+m[5]) % 360) + 360) % 360 : null;
+    const player = s.turn;
+    const cands = [];
+    const seenShape = new Set();
+    for (const id of s.hand) {
+      if (pieceName(id) !== name) continue;
+      if (s.phase === 'cathedral') { if (id !== 0) continue; }
+      else if (id === 0 || ownerOf(id) !== player) continue;
+      if (tag && dupTag(id) !== tag) continue;
+      // identical untagged copies are interchangeable — try each shape once
+      const sh = PIECES[id].shape;
+      if (!tag && seenShape.has(sh)) continue;
+      seenShape.add(sh);
+      cands.push(id);
+    }
+    for (const id of cands) {
+      const rots = rotGiven != null ? [rotGiven] : distinctRots[id];
+      for (const rot of rots) {
+        // the anchor is target square minus the shape's own top-left offset,
+        // so the piece's top-left occupied cell lands exactly on (col,row)
+        const [oi, oj] = topLeftCell(cellsFor(id, rot));
+        const c0 = col - oi, r0 = row - oj;
+        if (canPlace(s, player, id, rot, c0, r0)) return { id, rot, col: c0, row: r0 };
+      }
+    }
+    return null;
+  }
+
+  // Apply a line of move text to s (mutating it like place/pass). Returns the
+  // place() events, {passed:true}, or null if the line is not a legal move.
+  function applyText(s, text) {
+    const mv = textToMove(s, text);
+    if (!mv) return null;
+    if (mv.pass) { pass(s); return { passed: true }; }
+    return place(s, mv.id, mv.rot, mv.col, mv.row);
+  }
+
+  // Rebuild a state by replaying a record (array of lines, or a newline- or
+  // semicolon-separated string). `cathedralPlacer` is the player (1 or 2) who
+  // placed the cathedral — the first line. Returns the final state, or throws
+  // on the first illegal line.
+  function replay(cathedralPlacer, record) {
+    const lines = Array.isArray(record)
+      ? record : String(record).split(/[\n;]+/);
+    const s = newGame(cathedralPlacer);
+    let n = 0;
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+      if (applyText(s, line) === null) {
+        throw new Error(`illegal move at line ${n + 1}: "${line}"`);
+      }
+      n++;
+    }
+    return s;
+  }
+
   return {
     N, ownerOf, other, cellsFor, sizeOf, distinctRots,
     newGame, cloneState, canPlace, place, pass,
     legalMoves, hasLegalMove, score,
     chooseMove, chooseCathedral,
+    pieceName, moveToText, textToMove, applyText, replay,
   };
 })();
 
