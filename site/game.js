@@ -118,7 +118,6 @@ function buildPieces() {
     piecesLayer.appendChild(el);
     state[id] = { id, x: def.x, y: def.y, rot: def.rot, el };
     positionPiece(state[id]);
-    el.addEventListener('pointerdown', e => startDrag(e, id));
   }
 }
 
@@ -202,6 +201,46 @@ function startDrag(e, id) {
   p.el.addEventListener('pointerup', up);
   p.el.addEventListener('pointercancel', cancel);
 }
+
+// Can the current player grab this piece right now?
+function isDraggable(id) {
+  if (mode === 'ai') return aiDraggable(id);
+  if (mode === 'net') return net ? netDraggable(id) : true;   // pre-game: bounces
+  return false;
+}
+
+// Pick the piece to grab at a pointer position. A piece is grabbable from
+// anywhere in its (rectangular) bounding box, not just its painted cells; when
+// boxes overlap, a piece the pointer is actually painted on wins, otherwise the
+// topmost box does.
+function pieceAtPointer(e) {
+  // 1) painted hit — rotation-correct and ordered topmost-first by the browser
+  for (const el of document.elementsFromPoint(e.clientX, e.clientY)) {
+    const pc = el.closest ? el.closest('.piece') : null;
+    if (pc && isDraggable(+pc.dataset.id)) return +pc.dataset.id;
+  }
+  // 2) otherwise the topmost draggable piece whose bounding box contains it
+  let best = -1, bestZ = -Infinity;
+  for (const id in state) {
+    if (!isDraggable(+id)) continue;
+    const r = state[id].el.getBoundingClientRect();
+    if (e.clientX >= r.left && e.clientX <= r.right &&
+        e.clientY >= r.top && e.clientY <= r.bottom) {
+      const z = +state[id].el.style.zIndex || 0;
+      if (z >= bestZ) { bestZ = z; best = +id; }
+    }
+  }
+  return best;
+}
+
+// One delegated handler on the pieces layer (which overlays the board but sits
+// below the control buttons), instead of per-piece painted hits — so the empty
+// corners of a piece's box are grabbable, and buttons are never intercepted.
+piecesLayer.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;   // left button only
+  const id = pieceAtPointer(e);
+  if (id >= 0) startDrag(e, id);
+});
 
 function setSelected(id) {
   if (selected >= 0 && state[selected]) state[selected].el.classList.remove('sel');
